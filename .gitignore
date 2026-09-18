@@ -41,3 +41,6 @@ samples/
 # Final Cut Pro 보관함
 *.fcpbundle/
 *.fcpxmld/
+
+# SwiftPM
+.build/
