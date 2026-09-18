@@ -120,6 +120,10 @@ struct OpenAICompatibleProvider: AIProvider  // baseURL 사용자 입력 (Ollama
 - 매칭은 **단조 증가(monotonic)** 제약을 건다 — 설교는 원고 순서대로 진행되므로, i번째 원고 문장이 j번째 세그먼트에 매칭되면 i+1은 j 이후에서만 찾는다. (Needleman-Wunsch 계열 DP 정렬)
 - 이 단계에서 이미 **70~80%는 확정**된다. 확신도 높은 매칭(유사도 > 0.6)은 AI에 보내지 않는다.
 
+> **구현 변경 (Phase 1·3 실측, `docs/phase1-report.md` §4)**: 사용자는 원고에 없는 문장을 하나씩 지우지 않고 "원고를 떠난 긴 이야기"만 통째로 지운다.
+> 그래서 AI에는 세그먼트별 매칭이 아니라 **로컬 규칙이 찾은 탈선 후보 구간**을 앞뒤 문맥·주변 원고와 함께 보내,
+> 탈선 여부와 정확한 시작·끝 세그먼트를 받는다 (`AIDigressionJudge`). 아래 원안은 참고용으로 남긴다.
+
 **2단계: AI 정렬 (애매한 구간만)**
 - 1단계에서 확정된 매칭 사이의 **애매한 구간(gap)** 만 잘라서 AI에 보낸다
 - 앞뒤 확정 앵커를 함께 제공해 컨텍스트 유지
@@ -724,12 +728,13 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] 앱 셀프테스트(`--selftest`) 26항목 통과
 - 태그: `v0.2-phase2`
 
-### Phase 3 — AI 정렬
-- [ ] 설정 화면 + Keychain
-- [ ] `AIProvider` 3종 + 연결 테스트
-- [ ] `AIAligner` (청킹, 재시도, 실패 격리)
-- [ ] 자동 마킹 + 사유 뱃지 UI
-- [ ] 예상 비용 표시
+### Phase 3 — AI 정렬 ✅ (결과: `docs/phase3-report.md`)
+- [x] 설정 화면(⌘,) + Keychain (서비스 `com.nugabox.sermoncut.apikey`)
+- [x] `AIProvider` 3종 + 연결 테스트 (Claude Messages / DeepSeek / OpenAI 호환)
+- [x] `AIDigressionJudge` (탈선 후보 구간 단위 판정·경계 조정, 동시 3건, 재시도, 실패 격리)
+- [x] 자동 마킹 + 사유 뱃지·툴팁, 확인 필요 표시
+- [x] 예상 비용(토큰·호출 수) 확인 후 실행
+- [x] 09/13 검증: 수작업 대비 정밀도 69% → 98%
 - 태그: `v0.3-phase3`
 
 ### Phase 4 — 출력 완성

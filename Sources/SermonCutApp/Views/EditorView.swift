@@ -38,6 +38,19 @@ struct EditorView: View {
             Divider()
             statusBar
         }
+        .alert("AI 판정", isPresented: Binding(get: { state.pendingAIEstimate != nil }, set: { if !$0 { state.pendingAIEstimate = nil } })) {
+            Button("실행") { state.runAIJudgement() }
+            Button("취소", role: .cancel) { state.pendingAIEstimate = nil }
+        } message: {
+            if let e = state.pendingAIEstimate {
+                Text("탈선 후보 \(e.calls)곳을 \(state.aiConfig.kind.displayName)(\(state.aiConfig.model))로 판정합니다.\n예상 약 \(e.totalTokens.formatted()) 토큰 (입력 \(e.promptTokens.formatted()) · 출력 \(e.completionTokens.formatted())), 호출 \(e.calls)회.\n결과는 제안이며 직접 바꾼 항목은 건드리지 않습니다.")
+            }
+        }
+        .alert("AI 판정", isPresented: Binding(get: { state.aiMessage != nil }, set: { if !$0 { state.aiMessage = nil } })) {
+            Button("확인") { state.aiMessage = nil }
+        } message: {
+            Text(state.aiMessage ?? "")
+        }
     }
 
     // MARK: 전사문 목록
@@ -125,7 +138,7 @@ struct EditorView: View {
     private var statusBar: some View {
         let segs = state.project?.segments ?? []
         let removed = segs.filter(\.isRemoved).count
-        let review = segs.filter { !$0.isRemoved && $0.unmatchedReason == .unknown }.count
+        let review = segs.filter { $0.needsReview == true }.count
         let snap = state.media.map(FrameSnapper.init)
         let total = state.edl.flatMap { edl in snap?.seconds(edl.totalFrames) }
         let original = state.project?.sourceRange.duration ?? 0
@@ -175,6 +188,19 @@ struct EditorView: View {
                     Text("dB")
                 }
                 Spacer()
+                if state.aiRunning {
+                    ProgressView(value: Double(state.aiProgress.done), total: Double(max(1, state.aiProgress.total))) {
+                        Text("AI 판정 \(state.aiProgress.done)/\(state.aiProgress.total)").font(.caption)
+                    }
+                    .frame(width: 160)
+                    Button("중지") { state.cancelAI() }
+                } else {
+                    Button("AI 판정…") { state.requestAIJudgement() }
+                        .help("원고를 벗어난 후보 구간을 AI가 판정합니다 (\(state.aiConfig.kind.displayName) · \(state.aiConfig.model))")
+                    if !state.failedCandidateIDs.isEmpty {
+                        Button("실패 재시도 (\(state.failedCandidateIDs.count))") { state.runAIJudgement(only: state.failedCandidateIDs) }
+                    }
+                }
                 Button("FCPXML 내보내기…") { FilePanels.exportFCPXML(state) }
                     .disabled(state.edl == nil)
                 Button("프리뷰 렌더") {}
@@ -219,6 +245,7 @@ struct SegmentRowView: View {
         }
         .padding(.vertical, 2)
         .background(segment.isRemoved ? Color.gray.opacity(0.18) : Color.clear)
+        .help(segment.aiNote ?? "")
         .overlay(alignment: .leading) {
             if segment.alignStatus == .failed {
                 RoundedRectangle(cornerRadius: 3).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3]))
@@ -229,10 +256,7 @@ struct SegmentRowView: View {
 
     private var leftBorder: Color {
         if isCurrent { return .blue }
-        if segment.unmatchedReason == .unknown { return .yellow }
-        if segment.isRemoved, !segment.userOverridden, segment.unmatchedReason == .greeting || segment.unmatchedReason == .improvised {
-            return .yellow.opacity(0.7)
-        }
+        if segment.needsReview == true, !segment.userOverridden { return .yellow }
         return .clear
     }
 
@@ -241,10 +265,10 @@ struct SegmentRowView: View {
         guard !segment.userOverridden else { return nil }
         switch segment.unmatchedReason {
         case .improvised?: return segment.isRemoved ? "화제 이탈" : nil
+        case .greeting?: return segment.isRemoved ? "인사·기도" : nil
         case .unknown?: return "확인 필요"
         case .filler?: return "필러"
         case .repetition?: return "반복"
-        case .greeting?: return "인사"
         default: return nil
         }
     }

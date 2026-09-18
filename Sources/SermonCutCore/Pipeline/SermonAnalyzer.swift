@@ -104,6 +104,10 @@ public struct SermonAnalyzer: Sendable {
             return s
         }, alignment: alignment, sentences: sentences, sourceRange: p.sourceRange)
         p.segments = result.segments
+        p.candidates = result.suggestions.enumerated().map { i, s in
+            DigressionCandidate(id: "C\(i + 1)", segmentIDs: s.runSegmentIDs, range: s.range, localOverlap: s.localOverlap,
+                                globalOverlap: s.globalOverlap, localRemoved: s.removed, ai: nil)
+        }
         p.updatedAt = Date()
         return p
     }

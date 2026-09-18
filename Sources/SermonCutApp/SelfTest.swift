@@ -14,6 +14,7 @@ enum SelfTest {
         var seed: URL?
         var inPoint: Double = 2162
         var outPoint: Double = 4950
+        var ai = false
     }
 
     static func options() -> Options? {
@@ -25,6 +26,7 @@ enum SelfTest {
         o.seed = value("--seed").map { URL(fileURLWithPath: $0) }
         if let i = value("--in").flatMap(Timecode.parse) { o.inPoint = i }
         if let x = value("--out").flatMap(Timecode.parse) { o.outPoint = x }
+        o.ai = a.contains("--ai")
         return o
     }
 
@@ -162,6 +164,25 @@ enum SelfTest {
         check(state.edl?.transitions.allSatisfy { $0.durationFrames == 0 } == true, "디졸브 0초 → 모두 하드컷으로 재계산")
         state.updateSettings { $0.transitionDuration = 1 }
         check(state.edl?.clips.count == clipsBefore, "설정 되돌림")
+
+        // 5b. AI 판정 (실제 API, --ai 일 때만)
+        if o.ai {
+            // 자동 점검에서는 Keychain 접근 확인 창이 뜨지 않도록 SERMONCUT_API_KEY(SPEC §3.1 개발용 대체)를 쓴다
+            check(state.aiConfig.resolveAPIKey() != nil, "\(state.aiConfig.kind.displayName) API 키 확인")
+            state.requestAIJudgement()
+            check(state.pendingAIEstimate != nil, "AI 예상 비용 확인 창 (\(state.pendingAIEstimate?.calls ?? 0)곳, 약 \(state.pendingAIEstimate?.totalTokens ?? 0) 토큰)")
+            await settle(0.8)
+            capture("7-ai-confirm", o)
+            state.runAIJudgement()
+            check(await wait("AI 판정", timeout: 600) { !state.aiRunning && state.aiMessage != nil }, "AI 판정 완료")
+            note("  " + (state.aiMessage ?? "").replacingOccurrences(of: "\n", with: " / "))
+            let judged = (state.project?.candidates ?? []).filter { $0.ai?.status == .judged }.count
+            check(judged == state.project?.candidates?.count, "모든 후보 판정 (\(judged)곳)")
+            check(state.canUndo, "AI 판정도 실행 취소 가능")
+            state.aiMessage = nil
+            await settle(0.8)
+            capture("8-editor-after-ai", o)
+        }
 
         // 6. 저장 → 다시 열기 → 내보내기
         let projURL = o.output.appendingPathComponent("selftest.sermoncut")

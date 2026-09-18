@@ -67,6 +67,14 @@ final class AppState {
 
     struct SegmentState: Equatable { var isRemoved: Bool; var userOverridden: Bool }
 
+    // MARK: AI
+    var aiConfig: AIConfig = AppState.loadAIConfig()
+    var aiRunning = false
+    var aiProgress: (done: Int, total: Int) = (0, 0)
+    var aiMessage: String?
+    var pendingAIEstimate: AIDigressionJudge.Estimate?
+    @ObservationIgnored private var aiTask: Task<Void, Never>?
+
     init() {
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 20), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.tick(time.seconds) }
@@ -309,7 +317,7 @@ final class AppState {
             switch filter {
             case .all: break
             case .removed: if !s.isRemoved { return false }
-            case .review: if s.unmatchedReason != .unknown { return false }
+            case .review: if s.needsReview != true { return false }
             }
             return search.isEmpty || s.text.localizedCaseInsensitiveContains(search)
         }
@@ -404,6 +412,68 @@ final class AppState {
     var currentSegmentID: String? {
         project?.segments.first { $0.start <= currentTime && currentTime < $0.end }?.id
     }
+
+    // MARK: - AI 판정 (SPEC §3.3 — 호출 전 예상 비용 확인, 실패 격리)
+
+    static func loadAIConfig() -> AIConfig {
+        guard let data = UserDefaults.standard.data(forKey: "aiConfig"),
+              let c = try? JSONDecoder().decode(AIConfig.self, from: data) else { return .default }
+        return c
+    }
+
+    func saveAIConfig() {
+        if let data = try? JSONEncoder().encode(aiConfig) { UserDefaults.standard.set(data, forKey: "aiConfig") }
+    }
+
+    var failedCandidateIDs: Set<String> {
+        Set((project?.candidates ?? []).filter { $0.ai?.status == .failed }.map(\.id))
+    }
+
+    /// 1단계: 예상 비용을 계산해 확인 창을 띄운다
+    func requestAIJudgement() {
+        guard let p = project else { return }
+        let est = AIDigressionJudge().estimate(p)
+        guard est.calls > 0 else {
+            aiMessage = p.manuscript == nil ? "원고가 없어 AI 판정할 후보가 없습니다." : "AI로 판정할 탈선 후보가 없습니다."
+            return
+        }
+        pendingAIEstimate = est
+    }
+
+    /// 2단계: 확인 후 실행. only가 있으면 그 후보만(실패 재시도)
+    func runAIJudgement(only ids: Set<String>? = nil) {
+        guard let p = project, !aiRunning else { return }
+        pendingAIEstimate = nil
+        let config = aiConfig
+        aiRunning = true
+        aiProgress = (0, ids?.count ?? p.candidates?.count ?? 0)
+        aiTask = Task {
+            defer { aiRunning = false }
+            do {
+                let provider = try config.makeProvider()
+                let (result, report) = try await AIDigressionJudge().judge(p, provider: provider, only: ids) { done, total in
+                    Task { @MainActor [weak self] in self?.aiProgress = (done, total) }
+                }
+                // 판정 중 사용자가 바꾼 결정은 보존
+                var merged = result
+                if let current = project {
+                    let userMade = Dictionary(uniqueKeysWithValues: current.segments.filter(\.userOverridden).map { ($0.id, $0) })
+                    for i in merged.segments.indices { if let u = userMade[merged.segments[i].id] { merged.segments[i] = u } }
+                }
+                let before = project.map { Dictionary(uniqueKeysWithValues: $0.segments.map { ($0.id, SegmentState(isRemoved: $0.isRemoved, userOverridden: $0.userOverridden)) }) }
+                project = merged
+                if let before { undoStack.append(before); redoStack.removeAll(); updateUndoFlags() }
+                isDirty = true
+                var msg = "AI 판정 완료: \(report.judged)곳 (입력 \(report.promptTokens) · 출력 \(report.completionTokens) 토큰)"
+                if report.failed > 0 { msg += "\n실패 \(report.failed)곳 — 로컬 판단을 유지하고 '확인 필요'로 표시했습니다. [실패 재시도]로 다시 시도할 수 있습니다." }
+                aiMessage = msg
+            } catch {
+                if (error as? SermonCutError) != .cancelled { aiMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    func cancelAI() { aiTask?.cancel() }
 
     // MARK: - 저장/내보내기
 

@@ -26,6 +26,7 @@ public struct RemovalSuggester: Sendable {
     }
 
     public struct Suggestion: Sendable, Equatable {
+        public var runSegmentIDs: [String] = []
         public var range: TimeRange
         public var segmentIDs: [String]
         public var reason: UnmatchedReason
@@ -50,6 +51,7 @@ public struct RemovalSuggester: Sendable {
             segs[i].alignStatus = r.status
             segs[i].confidence = r.similarity
             segs[i].unmatchedReason = nil
+            if !segs[i].userOverridden { segs[i].needsReview = nil; segs[i].aiNote = nil }
         }
         guard hasManuscript else { return (segs, [], nil) }
 
@@ -114,9 +116,11 @@ public struct RemovalSuggester: Sendable {
             for j in run where !segs[j].userOverridden {
                 segs[j].isRemoved = offTopic
                 segs[j].unmatchedReason = offTopic ? .improvised : .unknown
+                segs[j].needsReview = offTopic ? nil : true
+                segs[j].aiNote = nil
                 ids.append(segs[j].id)
             }
-            suggestions.append(Suggestion(range: TimeRange(start: start, end: end), segmentIDs: ids,
+            suggestions.append(Suggestion(runSegmentIDs: segs[run].map(\.id), range: TimeRange(start: start, end: end), segmentIDs: ids,
                                           reason: offTopic ? .improvised : .unknown, removed: offTopic,
                                           localOverlap: local, globalOverlap: global))
         }

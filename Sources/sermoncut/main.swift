@@ -12,6 +12,9 @@ let usage = """
   sermoncut transcript --project 프로젝트.sermoncut [--all]
   sermoncut manuscript 원고파일
   sermoncut waveform --video 영상          (파형 생성 시간 측정, 캐시 없이)
+  sermoncut ai       --project 프로젝트.sermoncut [--provider deepseek|claude|openai-compatible] [--model 이름] [--base-url URL] [--yes]
+  sermoncut ai-test  [--provider …] [--model …]        (연결 테스트)
+  API 키: Keychain(서비스 com.nugabox.sermoncut.apikey) 또는 환경변수 SERMONCUT_API_KEY
 
 시간은 1:22:33.4 / 22:33 / 4953.4 형식 모두 가능. 모든 시간은 원본 영상 0초 기준.
 """
@@ -114,9 +117,9 @@ func printSummary(_ p: SermonProject) {
         let first = p.segments.first { $0.start >= r.start }?.text ?? ""
         print("  ✂︎ \(Timecode.format(r.start)) ~ \(Timecode.format(r.end)) (\(String(format: "%.1f", r.duration))초) \(first.prefix(40))…")
     }
-    let review = runs(p, where: { !$0.isRemoved && $0.unmatchedReason == .unknown })
+    let review = runs(p, where: { $0.needsReview == true })
     if !review.isEmpty {
-        print("확인 필요(원고와 안 맞지만 주제는 가까워 유지함): \(review.count)곳")
+        print("확인 필요: \(review.count)곳")
         for r in review {
             let first = p.segments.first { $0.start >= r.start }?.text ?? ""
             print("  ⚠︎ \(Timecode.format(r.start)) ~ \(Timecode.format(r.end)) (\(String(format: "%.1f", r.duration))초) \(first.prefix(40))…")
@@ -241,7 +244,7 @@ func transcript(_ args: Args) throws {
     let p = try ProjectFile.load(fileURL(try args.require("project")))
     let sentences = Dictionary(uniqueKeysWithValues: (p.manuscript?.sentences ?? []).map { ($0.id, $0.text) })
     for s in p.segments {
-        let mark = s.isRemoved ? "✂︎" : (s.alignStatus == .matched ? "✓" : (s.unmatchedReason == .unknown ? "⚠︎" : "·"))
+        let mark = s.isRemoved ? "✂︎" : (s.alignStatus == .matched ? "✓" : (s.needsReview == true ? "⚠︎" : "·"))
         var line = "\(mark) \(Timecode.format(s.start)) \(s.id) [\(String(format: "%.2f", s.confidence ?? 0))] \(s.text)"
         if args.flags.contains("all"), let m = s.matchedManuscriptID, let t = sentences[m] { line += "\n      ↳ \(m): \(t)" }
         print(line)
@@ -266,6 +269,60 @@ func waveform(_ args: Args) async throws {
     print(String(format: "버킷 %d개 (%.1f초 분량), 최대 %.2f, 소요 %.1f초", w.peaks.count, w.duration, peak, Date().timeIntervalSince(started)))
 }
 
+func aiConfig(_ args: Args) throws -> AIConfig {
+    let kind = try args.options["provider"].map { raw -> AIProviderKind in
+        guard let k = AIProviderKind(rawValue: raw) else { throw SermonCutError.invalidArgument("알 수 없는 provider: \(raw)") }
+        return k
+    } ?? .deepseek
+    return AIConfig(kind: kind, model: args.options["model"], baseURL: args.options["base-url"])
+}
+
+func aiTest(_ args: Args) async throws {
+    let config = try aiConfig(args)
+    let provider = try config.makeProvider()
+    let started = Date()
+    let r = try await provider.complete(system: "JSON만 출력하십시오.", user: "{\"ok\": true} 를 그대로 출력", maxTokens: 2000)
+    print(String(format: "%@ / %@ 연결 성공 (%.1f초, 입력 %d·출력 %d 토큰): %@", provider.displayName, provider.model,
+                 Date().timeIntervalSince(started), r.promptTokens, r.completionTokens, r.text))
+}
+
+func ai(_ args: Args) async throws {
+    let url = fileURL(try args.require("project"))
+    var project = try ProjectFile.load(url)
+    if project.candidates == nil { project = SermonAnalyzer().realign(project) }
+    let judge = AIDigressionJudge()
+    let est = judge.estimate(project)
+    print("AI 판정 대상: 탈선 후보 \(est.calls)곳, 예상 약 \(est.promptTokens + est.completionTokens) 토큰 (입력 \(est.promptTokens), 출력 \(est.completionTokens))")
+    guard est.calls > 0 else { return }
+    if !args.flags.contains("yes") {
+        print("계속하려면 --yes 를 붙여 다시 실행하세요.")
+        return
+    }
+    let provider = try aiConfig(args).makeProvider()
+    let started = Date()
+    let (p, report) = try await judge.judge(project, provider: provider) { done, total in eprint("  \(done)/\(total)") }
+    project = p
+    try ProjectFile.save(project, to: url)
+    print(String(format: "완료 %.0f초: 판정 %d · 실패 %d · 실제 사용 입력 %d / 출력 %d 토큰", Date().timeIntervalSince(started),
+                 report.judged, report.failed, report.promptTokens, report.completionTokens))
+    for e in report.errors { print("  ⚠︎ \(e)") }
+    let segs = Dictionary(uniqueKeysWithValues: project.segments.map { ($0.id, $0) })
+    for c in project.candidates ?? [] {
+        guard let a = c.ai else { continue }
+        let local = c.localRemoved ? "로컬:삭제" : "로컬:확인필요"
+        if a.status == .failed { print("  \(c.id) \(Timecode.format(c.range.start, millis: false)) \(local) → 실패"); continue }
+        var line = "  \(c.id) \(Timecode.format(c.range.start, millis: false))~\(Timecode.format(c.range.end, millis: false)) \(local) → "
+        if a.digression, let s = a.startID.flatMap({ segs[$0] }), let e = a.endID.flatMap({ segs[$0] }) {
+            line += "탈선 \(Timecode.format(s.start, millis: false))~\(Timecode.format(e.end, millis: false)) [\(a.category ?? "-")]"
+        } else {
+            line += "유지 [\(a.category ?? "-")]"
+        }
+        line += String(format: " (%.2f) %@", a.confidence ?? 0, a.reason ?? "")
+        print(line)
+    }
+    printSummary(project)
+}
+
 // MARK: - 진입점
 
 let args = Args(Array(CommandLine.arguments.dropFirst()))
@@ -278,6 +335,8 @@ do {
     case "transcript": try transcript(args)
     case "manuscript": try await manuscript(args)
     case "waveform": try await waveform(args)
+    case "ai": try await ai(args)
+    case "ai-test": try await aiTest(args)
     default: print(usage)
     }
 } catch {

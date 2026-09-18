@@ -118,7 +118,7 @@ struct TimelineStripView: View {
                     let rect = CGRect(x: x(s.start), y: 0, width: max(1, x(s.end) - x(s.start)), height: size.height)
                     if s.isRemoved {
                         ctx.fill(Path(rect), with: .color(.gray.opacity(0.85)))
-                    } else if s.unmatchedReason == .unknown {
+                    } else if s.needsReview == true {
                         ctx.fill(Path(rect), with: .color(.yellow.opacity(0.6)))
                     }
                 }
