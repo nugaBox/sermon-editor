@@ -13,8 +13,10 @@ public struct ScreenTextSample: Codable, Sendable, Equatable {
         /// Vision 정규 좌표 (0~1, 원점 왼쪽 아래)
         public var x: Double, y: Double, w: Double, h: Double
         public var confidence: Double
-        public init(text: String, x: Double, y: Double, w: Double, h: Double, confidence: Double) {
-            self.text = text; self.x = x; self.y = y; self.w = w; self.h = h; self.confidence = confidence
+        /// 글자 영역 밝은 픽셀 평균 밝기(0~1). 목차 박스에서 현재 대지(흰색)와 나머지(회색)를 가르는 데 쓴다
+        public var brightness: Double?
+        public init(text: String, x: Double, y: Double, w: Double, h: Double, confidence: Double, brightness: Double? = nil) {
+            self.text = text; self.x = x; self.y = y; self.w = w; self.h = h; self.confidence = confidence; self.brightness = brightness
         }
     }
     public var time: Double
@@ -43,7 +45,7 @@ public struct ScreenTextScanner: Sendable {
     /// 일정 간격으로 스캔 (결과 캐시)
     public func scan(video: URL, range: TimeRange? = nil, cacheDirectory: URL?,
                      progress: (@Sendable (Double) -> Void)? = nil) async throws -> ScreenTextScan {
-        let key = WaveformGenerator.cacheKey(video) + String(format: "-%.1f", interval)
+        let key = "v2-" + WaveformGenerator.cacheKey(video) + String(format: "-%.1f", interval)
             + (range.map { String(format: "-%.0f-%.0f", $0.start, $0.end) } ?? "")
         let cacheURL = cacheDirectory?.appendingPathComponent("screentext-\(key).json")
         if let cacheURL, let data = try? Data(contentsOf: cacheURL),
@@ -111,7 +113,28 @@ public struct ScreenTextScanner: Sendable {
         return (request.results ?? []).compactMap { obs in
             guard let top = obs.topCandidates(1).first, top.confidence > 0.3 else { return nil }
             let b = obs.boundingBox
-            return .init(text: top.string, x: b.minX, y: b.minY, w: b.width, h: b.height, confidence: Double(top.confidence))
+            return .init(text: top.string, x: b.minX, y: b.minY, w: b.width, h: b.height, confidence: Double(top.confidence),
+                         brightness: textBrightness(image, b))
         }
+    }
+
+    /// 글자 상자를 작은 회색조로 줄여, 밝은 쪽 1/4 픽셀(=글자)의 평균 밝기
+    static func textBrightness(_ image: CGImage, _ box: CGRect) -> Double? {
+        let W = Double(image.width), H = Double(image.height)
+        let rect = CGRect(x: box.minX * W, y: (1 - box.maxY) * H, width: box.width * W, height: box.height * H).integral
+        guard rect.width >= 2, rect.height >= 2, let crop = image.cropping(to: rect) else { return nil }
+        let w = 48, h = 8
+        var pixels = [UInt8](repeating: 0, count: w * h)
+        let ok: Bool = pixels.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            ctx.interpolationQuality = .low
+            ctx.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        let sorted = pixels.sorted(by: >)
+        let top = sorted.prefix(max(1, sorted.count / 4))
+        return Double(top.reduce(0) { $0 + Int($1) }) / Double(top.count) / 255
     }
 }

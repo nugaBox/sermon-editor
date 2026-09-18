@@ -9,6 +9,13 @@ public struct EDLClip: Codable, Equatable, Sendable {
     public var segmentIDs: [String]
 
     public var durationFrames: Int { sourceEndFrame - sourceStartFrame }
+
+    public init(sourceStartFrame: Int, sourceEndFrame: Int, timelineOffsetFrame: Int, segmentIDs: [String]) {
+        self.sourceStartFrame = sourceStartFrame
+        self.sourceEndFrame = sourceEndFrame
+        self.timelineOffsetFrame = timelineOffsetFrame
+        self.segmentIDs = segmentIDs
+    }
 }
 
 public struct EDLTransition: Codable, Equatable, Sendable {
@@ -26,6 +33,24 @@ public struct EditDecisionList: Codable, Equatable, Sendable {
     public var media: MediaInfo
     public var clips: [EDLClip]
     public var transitions: [EDLTransition]
+
+    public init(media: MediaInfo, clips: [EDLClip], transitions: [EDLTransition]) {
+        self.media = media
+        self.clips = clips
+        self.transitions = transitions
+    }
+
+    /// 원본 기준 유지 구간 목록(예: 사용자가 FCP에서 직접 편집한 결과)으로 EDL을 만든다
+    public static func fromKeptRanges(_ ranges: [TimeRange], media: MediaInfo) -> EditDecisionList {
+        let snap = FrameSnapper(media: media)
+        var offset = 0
+        let clips = ranges.map { r -> EDLClip in
+            let c = EDLClip(sourceStartFrame: snap.frame(r.start), sourceEndFrame: snap.frame(r.end), timelineOffsetFrame: offset, segmentIDs: [])
+            offset += c.durationFrames
+            return c
+        }
+        return EditDecisionList(media: media, clips: clips, transitions: [])
+    }
 
     public var totalFrames: Int { clips.reduce(0) { $0 + $1.durationFrames } }
     public var handleShortageCount: Int { transitions.filter(\.handleShortage).count }

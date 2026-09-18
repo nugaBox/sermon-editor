@@ -76,6 +76,15 @@ final class AppState {
     }
     @ObservationIgnored private var rangeTask: Task<Void, Never>?
 
+    // MARK: 목차 (Phase 5b)
+    var showChapters = false
+    var overlayScanRunning = false
+    var overlayScanProgress: Double = 0
+    var chapterOptions: ChapterBuilder.Options = AppState.loadChapterOptions() {
+        didSet { if let d = try? JSONEncoder().encode(chapterOptions) { UserDefaults.standard.set(d, forKey: "chapterOptions") } }
+    }
+    @ObservationIgnored private var overlayTask: Task<Void, Never>?
+
     // MARK: 출력 (Phase 4)
     var renderRunning = false
     var renderProgress: Double = 0
@@ -313,6 +322,75 @@ final class AppState {
         seek(s.start)
     }
 
+    // MARK: - 목차
+
+    static func loadChapterOptions() -> ChapterBuilder.Options {
+        guard let d = UserDefaults.standard.data(forKey: "chapterOptions"),
+              var o = try? JSONDecoder().decode(ChapterBuilder.Options.self, from: d) else { return .init() }
+        o.pastedOutline = nil   // 붙여넣기는 프로젝트마다
+        return o
+    }
+
+    var chapters: [ChapterBuilder.Chapter] {
+        guard let p = project else { return [] }
+        return ChapterBuilder.build(project: p, edl: edl, options: chapterOptions)
+    }
+
+    /// 화면 목차 전환 스캔 (분석 직후 자동, 결과는 프로젝트에 저장)
+    func scanOverlay(force: Bool = false) {
+        guard let p = project, !overlayScanRunning, force || p.overlayChanges == nil else { return }
+        overlayScanRunning = true
+        overlayScanProgress = 0
+        overlayTask = Task {
+            defer { overlayScanRunning = false }
+            do {
+                let scanned = try await ChapterBuilder.scanOverlay(p, cacheDirectory: Self.cacheRoot.appendingPathComponent("screentext")) { v in
+                    Task { @MainActor [weak self] in self?.overlayScanProgress = v }
+                }
+                guard var current = project else { return }
+                current.overlayChanges = scanned.overlayChanges
+                current.screenOutline = scanned.screenOutline
+                project = current
+                isDirty = true
+            } catch {
+                if (error as? SermonCutError) != .cancelled, !(error is CancellationError) { errorMessage = "화면 목차를 읽지 못했습니다: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func setChapterOutline(_ text: String) {
+        guard var p = project else { return }
+        p.chapterOutlineText = text.isEmpty ? nil : text
+        p.chapterTimeOverrides = nil
+        project = p
+        isDirty = true
+    }
+
+    func nudgeChapter(_ c: ChapterBuilder.Chapter, by delta: Double) {
+        guard var p = project, let t = c.sourceTime else { return }
+        var o = p.chapterTimeOverrides ?? [:]
+        o[c.number] = t + delta
+        p.chapterTimeOverrides = o
+        project = p
+        isDirty = true
+    }
+
+    func setChapterHere(_ c: ChapterBuilder.Chapter) {
+        guard var p = project else { return }
+        var o = p.chapterTimeOverrides ?? [:]
+        o[c.number] = currentTime
+        p.chapterTimeOverrides = o
+        project = p
+        isDirty = true
+    }
+
+    func resetChapterOverrides() {
+        guard var p = project else { return }
+        p.chapterTimeOverrides = nil
+        project = p
+        isDirty = true
+    }
+
     // MARK: - 원고
 
     func loadManuscript(_ url: URL) {
@@ -365,6 +443,7 @@ final class AppState {
                 undoStack = []; redoStack = []; updateUndoFlags()
                 screen = .editor
                 seek(p.sourceRange.start)
+                scanOverlay()
             } catch {
                 if Task.isCancelled || (error as? SermonCutError) == .cancelled {
                     screen = .manuscript
@@ -571,7 +650,7 @@ final class AppState {
         var options = FCPXMLExporter.Options(eventName: "SermonCut",
                                              projectName: video.deletingPathExtension().lastPathComponent + " (SermonCut)",
                                              audioGainDB: p.settings.audioGainDB)
-        options.chapterMarkers = ChapterMarkers.fromManuscript(p).map { ($0.sourceSeconds, $0.title) }
+        options.chapterMarkers = chapters.compactMap { c in c.sourceTime.map { ($0, "\(c.number). \(c.title)") } }
         let xml = FCPXMLExporter().export(edl: edl, videoURL: video, options: options)
         do {
             try xml.write(to: url, atomically: true, encoding: .utf8)

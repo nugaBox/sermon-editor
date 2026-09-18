@@ -145,8 +145,9 @@ struct TimelineStripView: View {
                                  with: .color(short ? .orange : .black.opacity(0.5)))
                     }
                 }
-                for m in ChapterMarkers.fromManuscript(p) {
-                    let a = x(m.sourceSeconds)
+                for c in state.chapters {
+                    guard let t = c.sourceTime else { continue }
+                    let a = x(t)
                     ctx.fill(Path(CGRect(x: a - 1, y: 0, width: 3, height: 6)), with: .color(.orange))
                 }
                 let px = x(state.currentTime)

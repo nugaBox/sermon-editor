@@ -55,6 +55,8 @@ struct SermonCutApp: App {
                 Button("선택 항목 삭제") { if state.screen == .editor { state.remove(state.selection) } }
                     .keyboardShortcut(.delete, modifiers: .command)
                 Button("삭제/복원 전환") { if state.screen == .editor { state.toggleRemoved(state.selection) } }
+                Button("설교 목차…") { if state.screen == .editor { state.showChapters = true } }
+                    .keyboardShortcut("t")
                 Divider()
                 Button("AI 판정…") { if state.screen == .editor { state.requestAIJudgement() } }
                     .keyboardShortcut("j", modifiers: [.command, .shift])

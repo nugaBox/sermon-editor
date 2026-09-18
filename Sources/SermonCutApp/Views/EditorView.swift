@@ -47,6 +47,9 @@ struct EditorView: View {
                 Text("탈선 후보 \(e.calls)곳을 \(state.aiConfig.kind.displayName)(\(state.aiConfig.model))로 판정합니다.\n예상 약 \(e.totalTokens.formatted()) 토큰 (입력 \(e.promptTokens.formatted()) · 출력 \(e.completionTokens.formatted())), 호출 \(e.calls)회.\n결과는 제안이며 직접 바꾼 항목은 건드리지 않습니다.")
             }
         }
+        .sheet(isPresented: Binding(get: { state.showChapters }, set: { state.showChapters = $0 })) {
+            ChaptersView().environment(state)
+        }
         .alert("렌더", isPresented: Binding(get: { state.renderMessage != nil }, set: { if !$0 { state.renderMessage = nil } })) {
             Button("열기") { if let u = state.lastRenderURL { NSWorkspace.shared.open(u) }; state.renderMessage = nil }
             Button("Finder에서 보기") { if let u = state.lastRenderURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }; state.renderMessage = nil }
@@ -209,6 +212,8 @@ struct EditorView: View {
                         Button("실패 재시도 (\(state.failedCandidateIDs.count))") { state.runAIJudgement(only: state.failedCandidateIDs) }
                     }
                 }
+                Button("목차…") { state.showChapters = true }
+                    .help("유튜브 챕터용 설교 목차 (⌘T)")
                 Toggle("내보낸 뒤 FCP로 열기", isOn: Binding(get: { state.openInFCPAfterExport }, set: { state.openInFCPAfterExport = $0 }))
                     .toggleStyle(.checkbox)
                 Button("FCPXML 내보내기…") { FilePanels.exportFCPXML(state) }

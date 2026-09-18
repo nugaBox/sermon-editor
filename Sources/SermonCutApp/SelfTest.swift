@@ -51,6 +51,8 @@ enum SelfTest {
             return true
         }
         try? FileManager.default.createDirectory(at: o.output, withIntermediateDirectories: true)
+        // 캡처가 잘 보이도록 점검 중에는 밝은 모드로 (다크 모드 흰 글자가 투명 배경에 묻힘)
+        NSApp.appearance = NSAppearance(named: .aqua)
         let started = Date()
 
         // 1. 영상 열기 → 구간 선택 화면
@@ -139,6 +141,20 @@ enum SelfTest {
         check(state.edl != nil, "EDL 계산 (예상 길이 \(state.edl.map { Timecode.format(FrameSnapper(media: $0.media).seconds($0.totalFrames)) } ?? "-"))")
         await settle(1.0)
         capture("4-editor", o)
+
+        // 4b. 목차 — 분석 직후 화면 목차 스캔이 자동으로 돈다
+        check(await wait("화면 목차", timeout: 600) { !state.overlayScanRunning && state.project?.overlayChanges != nil },
+              "화면 목차 자동 스캔 (전환 \(state.project?.overlayChanges?.count ?? 0)곳)")
+        let chapters = state.chapters
+        check(chapters.count == 4 && chapters.allSatisfy { $0.outputTime != nil }, "목차 4개 모두 시간 있음")
+        let yt = ChapterBuilder.youtubeText(chapters, options: state.chapterOptions)
+        note("  " + yt.replacingOccurrences(of: "\n", with: " / "))
+        check(yt.hasPrefix("00:00 성경봉독"), "유튜브 목차 첫 줄 00:00 성경봉독")
+        state.showChapters = true
+        await settle(1.2)
+        capture("4b-chapters", o)
+        state.showChapters = false
+        await settle(0.5)
 
         // 5. 키보드 편집: 유지 세그먼트 하나 선택 → D → 삭제, ⌘Z → 복원, ⇧⌘Z → 다시 삭제
         guard let target = project.segments.first(where: { !$0.isRemoved && $0.start > project.sourceRange.start + 300 }) else {
@@ -289,7 +305,8 @@ enum SelfTest {
 
     /// 자기 창을 PNG로 저장
     private static func capture(_ name: String, _ o: Options) {
-        guard let window, let view = window.contentView else { return }
+        // 시트(목차 창 등)가 떠 있으면 시트를 찍는다
+        guard let main = window, let window = main.attachedSheet ?? Optional(main), let view = window.contentView else { return }
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         // 창 배경을 깔고 합성 (투명 배경이면 다크 모드 흰 글자가 안 보임)

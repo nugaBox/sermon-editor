@@ -15,6 +15,7 @@ let usage = """
   sermoncut ai       --project 프로젝트.sermoncut [--provider deepseek|claude|openai-compatible] [--model 이름] [--base-url URL] [--yes]
   sermoncut ai-test  [--provider …] [--model …]        (연결 테스트)
   sermoncut scan     --video 영상 [--interval 6] [--transcript base전사.json] [--dump]   (설교 구간 후보)
+  sermoncut chapters --project 프로젝트.sermoncut [--paste 목차.txt] [--reference 기준.fcpxml] [--intro 10.067]
   sermoncut render   --project 프로젝트.sermoncut --out 결과.mp4 [--final] [--cover 썸네일.jpg]
   API 키: Keychain(서비스 com.nugabox.sermoncut.apikey) 또는 환경변수 SERMONCUT_API_KEY
 
@@ -154,7 +155,7 @@ func export(_ args: Args) throws {
     let video = URL(fileURLWithPath: project.videoPath)
     var options = FCPXMLExporter.Options(eventName: "SermonCut", projectName: video.deletingPathExtension().lastPathComponent + " (SermonCut)",
                                          audioGainDB: settings.audioGainDB)
-    options.chapterMarkers = ChapterMarkers.fromManuscript(project).map { ($0.sourceSeconds, $0.title) }
+    options.chapterMarkers = ChapterBuilder.build(project: project, edl: edl).compactMap { c in c.sourceTime.map { ($0, "\(c.number). \(c.title)") } }
     let xml = FCPXMLExporter().export(edl: edl, videoURL: video, options: options)
     do { try xml.write(to: out, atomically: true, encoding: .utf8) } catch {
         throw SermonCutError.fileWriteFailed(path: out.path, reason: error.localizedDescription)
@@ -374,6 +375,44 @@ func printRangeCandidates(_ f: RangeFinder.Result) {
     }
 }
 
+func chapters(_ args: Args) async throws {
+    let url = fileURL(try args.require("project"))
+    var project = try ProjectFile.load(url)
+    if args.flags.contains("no-manuscript") { project.manuscript = nil }   // 원고 없는 주 시험용
+    let video = URL(fileURLWithPath: project.videoPath)
+    let started = Date()
+    // 설교 구간만 6초 간격으로 화면 스캔 → 목차 강조 전환 → 전환 앞뒤 1초 정밀 스캔
+    let coarse = try await ScreenTextScanner(interval: 6).scan(video: video, range: project.sourceRange,
+                                                              cacheDirectory: fileURL("~/Library/Caches/SermonCut/screentext"))
+    var changes = ChapterBuilder.overlayChanges(coarse)
+    changes = try await ChapterBuilder.refineOverlayChanges(changes, coarse: coarse, video: video)
+    print(String(format: "화면 목차 전환 %d곳 (%.0f초)", changes.count, Date().timeIntervalSince(started)))
+    for c in changes { print("  \(c.number). \(c.title) — 원본 \(Timecode.format(c.time))") }
+
+    var options = ChapterBuilder.Options()
+    if let i = args.options["intro"].flatMap(Double.init) { options.introDuration = i }
+    if let paste = args.options["paste"] { options.pastedOutline = try String(contentsOf: fileURL(paste), encoding: .utf8) }
+    let outline = RangeFinder.find(screen: coarse, transcript: nil).metadata?.outline ?? []
+
+    func show(_ label: String, _ edl: EditDecisionList) {
+        let list = ChapterBuilder.build(project: project, edl: edl, overlay: changes, overlayOutline: outline, options: options)
+        print("\n[\(label)]")
+        print(ChapterBuilder.youtubeText(list, options: options))
+        for c in list {
+            print("   · \(c.number) 제목:\(c.titleSource) 시간:\(c.timeSource.rawValue) 원본 \(c.sourceTime.map { Timecode.format($0) } ?? "-")\(c.warning.map { " ⚠︎ " + $0 } ?? "")")
+        }
+    }
+    let edl = try EDLBuilder.build(segments: project.segments, silences: project.silences, sourceRange: project.sourceRange,
+                                   media: project.media, settings: project.settings)
+    show("SermonCut 편집 기준", edl)
+    if let ref = args.options["reference"] {
+        let refURL = fileURL(ref)
+        let data = try Data(contentsOf: refURL.pathExtension == "fcpxmld" ? refURL.appendingPathComponent("Info.fcpxml") : refURL)
+        let kept = try ReferenceEDLReader.keptRanges(fcpxml: data, assetName: video.deletingPathExtension().lastPathComponent)
+        show("사용자 편집 기준 (검증용)", EditDecisionList.fromKeptRanges(kept, media: project.media))
+    }
+}
+
 // MARK: - 진입점
 
 let args = Args(Array(CommandLine.arguments.dropFirst()))
@@ -390,6 +429,7 @@ do {
     case "ai-test": try await aiTest(args)
     case "render": try await render(args)
     case "scan": try await scan(args)
+    case "chapters": try await chapters(args)
     default: print(usage)
     }
 } catch {
