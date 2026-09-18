@@ -28,6 +28,11 @@ struct WaveformView: View {
                 }
                 if let i = state.inPoint { marker(x(i), label: "I", height: geo.size.height - 16, color: .green) }
                 if let o = state.outPoint { marker(x(o), label: "O", height: geo.size.height - 16, color: .orange) }
+                // 자동 찾기 후보 (▼ 시작 초록 / 끝 주황)
+                if let r = state.rangeResult {
+                    ForEach(Array(r.starts.enumerated()), id: \.offset) { _, c in candidateMark(x(c.time), color: .green) }
+                    ForEach(Array(r.ends.enumerated()), id: \.offset) { _, c in candidateMark(x(c.time), color: .orange) }
+                }
                 // 재생 위치
                 Rectangle().fill(Color.red).frame(width: 1.5, height: geo.size.height - 16).offset(x: x(state.currentTime))
                 ruler(width: width, duration: duration).offset(y: geo.size.height - 14)
@@ -89,6 +94,13 @@ struct WaveformView: View {
             Rectangle().fill(color).frame(width: 2, height: height - 14)
         }
         .offset(x: x - 1)
+    }
+
+    private func candidateMark(_ x: CGFloat, color: Color) -> some View {
+        Image(systemName: "arrowtriangle.down.fill")
+            .font(.system(size: 9))
+            .foregroundStyle(color)
+            .offset(x: x - 4, y: -2)
     }
 
     private func ruler(width: CGFloat, duration: Double) -> some View {

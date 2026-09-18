@@ -124,7 +124,31 @@ public struct RemovalSuggester: Sendable {
                                           reason: offTopic ? .improvised : .unknown, removed: offTopic,
                                           localOverlap: local, globalOverlap: global))
         }
+        // 설교 구간 맨 끝의 봉헌·찬송 안내 ("찬송가 329장을 찬송하시면서 봉헌하십시오") — 사용자는 항상 잘라냄 (09/13)
+        if let closing = Self.closingAnnouncement(segs, sourceRange: sourceRange) {
+            var ids: [String] = []
+            for j in closing where !segs[j].userOverridden && !segs[j].isRemoved {
+                segs[j].isRemoved = true
+                segs[j].unmatchedReason = .greeting
+                segs[j].aiNote = "설교 뒤 봉헌·찬송 안내"
+                ids.append(segs[j].id)
+            }
+            if !ids.isEmpty {
+                suggestions.append(Suggestion(runSegmentIDs: ids, range: TimeRange(start: segs[closing.lowerBound].start, end: segs[closing.upperBound].end),
+                                              segmentIDs: ids, reason: .greeting, removed: true, localOverlap: 0, globalOverlap: 0))
+            }
+        }
         return (segs, suggestions, reading)
+    }
+
+    /// 구간 마지막 30초 안에서 봉헌·찬송 안내가 시작되는 세그먼트부터 끝까지
+    static func closingAnnouncement(_ segs: [TranscriptSegment], sourceRange: TimeRange) -> ClosedRange<Int>? {
+        let pattern = #"(봉헌|헌금|찬송가\s*\d+\s*장|찬송하시면서|찬송하겠습니다)"#
+        guard let last = segs.indices.last else { return nil }
+        for j in segs.indices where segs[j].start >= sourceRange.end - 30 {
+            if segs[j].text.range(of: pattern, options: .regularExpression) != nil { return j...last }
+        }
+        return nil
     }
 
     /// 시작부 성경 봉독: 첫 몇 세그먼트 안에 "읽어드리겠습니다/봉독" 같은 안내가 있으면,

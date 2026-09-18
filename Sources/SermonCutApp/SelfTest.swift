@@ -16,6 +16,7 @@ enum SelfTest {
         var outPoint: Double = 4950
         var ai = false
         var render = false
+        var autofind = false
     }
 
     static func options() -> Options? {
@@ -29,6 +30,7 @@ enum SelfTest {
         if let x = value("--out").flatMap(Timecode.parse) { o.outPoint = x }
         o.ai = a.contains("--ai")
         o.render = a.contains("--render")
+        o.autofind = a.contains("--autofind")
         return o
     }
 
@@ -55,6 +57,25 @@ enum SelfTest {
         state.openVideo(o.video)
         check(await wait("영상 열기", timeout: 20) { state.screen == .rangeSelect }, "영상 열기 → 구간 선택 화면")
         check(await wait("파형", timeout: 60) { state.waveform != nil }, "파형 생성 (\(state.waveform?.peaks.count ?? 0)개 버킷)")
+
+        // 1b. 설교 구간 자동 찾기 (--autofind) — 후보 제시 → 사용자가 '추천 구간 적용'
+        if o.autofind {
+            state.autoFindRange()
+            check(await wait("자동 찾기", timeout: 900) { !state.rangeScanRunning && state.rangeResult != nil }, "설교 구간 자동 찾기 완료")
+            if let r = state.rangeResult {
+                note("  후보: 시작 \(r.starts.map { Timecode.format($0.time, millis: false) + "(" + $0.source.rawValue + ")" }.joined(separator: ", ")) / 끝 \(r.ends.map { Timecode.format($0.time, millis: false) }.joined(separator: ", "))")
+                check(state.inPoint == nil, "자동 확정하지 않음 (적용 전 In 없음)")
+                state.applySuggestedRange()
+                if let s = r.suggested {
+                    check(abs(s.start - 2162.6) < 15 && abs(s.end - 4953.4) < 15,
+                          "추천 구간 \(Timecode.format(s.start)) ~ \(Timecode.format(s.end)) (사용자 편집 36:02.6 ~ 1:22:33.4 와 15초 이내)")
+                }
+                check(r.metadata?.title == "믿음의 사람이 세상을 돌파한다", "화면에서 설교 제목 읽음")
+                check(r.metadata?.outline.count == 4, "화면 목차 4개")
+            }
+            await settle(1.0)
+            capture("0-autofind", o)
+        }
 
         // 2. 키보드로 In/Out 지정 (I, O, → 이동 검증)
         await settle()

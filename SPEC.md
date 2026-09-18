@@ -744,10 +744,12 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] 핸들 부족 경고 UI (상태 줄 + 타임라인 주황 편집점)
 - 태그: `v0.4-phase4`
 
-### Phase 5 — 구간 자동 찾기
-- [ ] `QuickScanner` — whisper base 모델 전체 스캔 + 결과 캐시
-- [ ] 키워드 설정 UI (기본값: 대표기도 / 봉헌)
-- [ ] 파형 위 후보 마커 표시
+### Phase 5 — 구간 자동 찾기 ✅ (결과: `docs/phase5-report.md`)
+- [x] `QuickScanner` — whisper base 모델 전체 스캔 + 결과 캐시 (92분 93초. "대표기도"/"봉헌"은 못 잡음 → 보조 신호)
+- [x] `ScreenTextScanner` + `RangeFinder` — **화면 순서 자막 OCR을 주 신호로** (성경 봉독 / 설교 자막 / 봉헌 찬송)
+- [x] 키워드 설정 UI
+- [x] 파형 위 후보 마커 표시, 추천 구간 적용(자동 확정 안 함)
+- [x] 09/13 검증: In −4.8초, Out +2.6초
 - 태그: `v0.5-phase5`
 
 ### Phase 5b — 설교 목차 (6.6절)

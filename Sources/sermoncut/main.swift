@@ -14,6 +14,7 @@ let usage = """
   sermoncut waveform --video 영상          (파형 생성 시간 측정, 캐시 없이)
   sermoncut ai       --project 프로젝트.sermoncut [--provider deepseek|claude|openai-compatible] [--model 이름] [--base-url URL] [--yes]
   sermoncut ai-test  [--provider …] [--model …]        (연결 테스트)
+  sermoncut scan     --video 영상 [--interval 6] [--transcript base전사.json] [--dump]   (설교 구간 후보)
   sermoncut render   --project 프로젝트.sermoncut --out 결과.mp4 [--final] [--cover 썸네일.jpg]
   API 키: Keychain(서비스 com.nugabox.sermoncut.apikey) 또는 환경변수 SERMONCUT_API_KEY
 
@@ -340,6 +341,39 @@ func render(_ args: Args) async throws {
     print(String(format: "렌더 완료 %.0f초: %@ (예상 길이 %@)", Date().timeIntervalSince(started), out.path, Timecode.format(duration)))
 }
 
+func scan(_ args: Args) async throws {
+    let video = fileURL(try args.require("video"))
+    let started = Date()
+    let printer = ProgressPrinter()
+    // 빠른 음성 스캔 결과(whisper base JSON)가 있으면 같이 쓴다
+    var transcript: [TranscriptSegment]?
+    if let t = args.options["transcript"] { transcript = try TranscriptParser.parse(Data(contentsOf: fileURL(t)), sourceStart: 0) }
+    let (found, scan) = try await RangeFinder.scan(video: video, coarseInterval: args.options["interval"].flatMap(Double.init) ?? 6,
+                                                   transcript: transcript,
+                                                   cacheDirectory: fileURL("~/Library/Caches/SermonCut/screentext")) { p in printer.report(.probe, p) }
+    print(String(format: "화면 스캔 %d장, %.0f초", scan.samples.count, Date().timeIntervalSince(started)))
+    if args.flags.contains("dump") {
+        var last = ""
+        for s in scan.samples {
+            let text = s.lines.map(\.text).joined(separator: " | ")
+            if text != last { print("\(Timecode.format(s.time, millis: false))  \(text.prefix(160))") }
+            last = text
+        }
+    }
+    printRangeCandidates(found)
+}
+
+func printRangeCandidates(_ f: RangeFinder.Result) {
+    print("설교 구간 후보 (자동 확정하지 않음 — 사용자가 고른다):")
+    for c in f.starts { print("  In  \(Timecode.format(c.time)) [\(c.source.rawValue)] \(c.label)") }
+    for c in f.ends { print("  Out \(Timecode.format(c.time)) [\(c.source.rawValue)] \(c.label)") }
+    if let s = f.suggested { print("  → 추천 구간 \(Timecode.format(s.start)) ~ \(Timecode.format(s.end)) (\(Timecode.format(s.duration)))") }
+    if let m = f.metadata {
+        print("화면에서 읽은 설교 정보: 제목 \(m.title ?? "-") / 본문 \(m.passage ?? "-") / 설교자 \(m.preacher ?? "-") / 예배 \(m.serviceLabel ?? "-")")
+        if !m.outline.isEmpty { print("  화면 목차: " + m.outline.joined(separator: " / ")) }
+    }
+}
+
 // MARK: - 진입점
 
 let args = Args(Array(CommandLine.arguments.dropFirst()))
@@ -355,6 +389,7 @@ do {
     case "ai": try await ai(args)
     case "ai-test": try await aiTest(args)
     case "render": try await render(args)
+    case "scan": try await scan(args)
     default: print(usage)
     }
 } catch {

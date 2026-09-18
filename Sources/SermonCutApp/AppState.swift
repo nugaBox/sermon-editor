@@ -67,6 +67,15 @@ final class AppState {
 
     struct SegmentState: Equatable { var isRemoved: Bool; var userOverridden: Bool }
 
+    // MARK: 구간 자동 찾기 (Phase 5)
+    var rangeScanRunning = false
+    var rangeScanProgress: (screen: Double, audio: Double) = (0, 0)
+    var rangeResult: RangeFinder.Result?
+    var rangeKeywords: RangeFinder.Keywords = AppState.loadKeywords() {
+        didSet { if let d = try? JSONEncoder().encode(rangeKeywords) { UserDefaults.standard.set(d, forKey: "rangeKeywords") } }
+    }
+    @ObservationIgnored private var rangeTask: Task<Void, Never>?
+
     // MARK: 출력 (Phase 4)
     var renderRunning = false
     var renderProgress: Double = 0
@@ -251,6 +260,57 @@ final class AppState {
     var sourceRange: TimeRange? {
         guard let i = inPoint, let o = outPoint, o > i else { return nil }
         return TimeRange(start: max(0, i - marginHead), end: min(duration, o + marginTail))
+    }
+
+    // MARK: - 구간 자동 찾기 (후보만 제시, 확정은 사용자)
+
+    static func loadKeywords() -> RangeFinder.Keywords {
+        guard let d = UserDefaults.standard.data(forKey: "rangeKeywords"),
+              let k = try? JSONDecoder().decode(RangeFinder.Keywords.self, from: d) else { return .init() }
+        return k
+    }
+
+    func autoFindRange() {
+        guard let video = videoURL, !rangeScanRunning else { return }
+        rangeScanRunning = true
+        rangeScanProgress = (0, 0)
+        let duration = self.duration
+        let keywords = rangeKeywords
+        let cache = Self.cacheRoot
+        rangeTask = Task {
+            defer { rangeScanRunning = false }
+            do {
+                let quick = QuickScanner()
+                // 화면(Vision)과 음성(whisper base)을 동시에
+                async let screenPart = RangeFinder.scan(video: video, coarseInterval: 6, transcript: nil,
+                                                       cacheDirectory: cache.appendingPathComponent("screentext"), keywords: keywords) { p in
+                    Task { @MainActor [weak self] in self?.rangeScanProgress.screen = p }
+                }
+                async let audioPart: [TranscriptSegment]? = quick.isAvailable
+                    ? quick.scan(video: video, duration: duration, cacheDirectory: cache) { p in
+                        Task { @MainActor [weak self] in self?.rangeScanProgress.audio = p }
+                    }
+                    : nil
+                let (_, screen) = try await screenPart
+                let audio = try? await audioPart
+                var r = RangeFinder.find(screen: ScreenTextScan(interval: 6, samples: screen.samples), transcript: audio, keywords: keywords)
+                r.suggested = RangeFinder.suggest(r)
+                rangeResult = r
+                if r.suggested == nil { errorMessage = "설교 구간 후보를 찾지 못했습니다. 파형을 보고 직접 지정해 주세요." }
+            } catch {
+                if (error as? SermonCutError) != .cancelled, !(error is CancellationError) { errorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    func cancelAutoFind() { rangeTask?.cancel() }
+
+    /// 추천 구간 적용 — 사용자가 버튼을 눌렀을 때만
+    func applySuggestedRange() {
+        guard let s = rangeResult?.suggested else { return }
+        inPoint = s.start
+        outPoint = s.end
+        seek(s.start)
     }
 
     // MARK: - 원고

@@ -50,6 +50,14 @@ struct SettingsView: View {
                     if let testResult { Text(testResult).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                 }
             }
+            Section("설교 구간 자동 찾기 키워드 (쉼표로 구분)") {
+                TextField("시작 화면", text: keywordBinding(\.start))
+                TextField("시작 직전", text: keywordBinding(\.beforeStart))
+                TextField("끝 화면", text: keywordBinding(\.end))
+                Text("화면에 뜨는 순서 자막(OBS)과 봉독 안내 음성으로 후보를 찾습니다. 기본값: 성경봉독 / 대표기도 / 봉헌·헌금·찬송가")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("기본값으로") { state.rangeKeywords = .init() }
+            }
             Section {
                 Text("API 키는 macOS Keychain에만 저장되며 프로젝트 파일·로그에 남지 않습니다. 개발용으로 환경변수 SERMONCUT_API_KEY가 있으면 그것을 먼저 씁니다.")
                     .font(.caption)
@@ -57,9 +65,16 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
+        .frame(width: 560)
         .onAppear(perform: reloadKey)
         .onChange(of: state.aiConfig) { _, _ in state.saveAIConfig() }
+    }
+
+    private func keywordBinding(_ path: WritableKeyPath<RangeFinder.Keywords, [String]>) -> Binding<String> {
+        Binding(get: { state.rangeKeywords[keyPath: path].joined(separator: ", ") },
+                set: { v in
+                    state.rangeKeywords[keyPath: path] = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                })
     }
 
     private func reloadKey() {
