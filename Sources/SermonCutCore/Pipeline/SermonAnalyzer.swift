@@ -102,7 +102,7 @@ public struct SermonAnalyzer: Sendable {
             var s = s
             if !s.userOverridden { s.isRemoved = false }
             return s
-        }, alignment: alignment, sourceRange: p.sourceRange, hasManuscript: !sentences.isEmpty)
+        }, alignment: alignment, sentences: sentences, sourceRange: p.sourceRange)
         p.segments = result.segments
         p.updatedAt = Date()
         return p

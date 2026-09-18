@@ -46,15 +46,24 @@ public struct EditDecisionList: Codable, Equatable, Sendable {
 public enum EDLBuilder {
     public static func build(segments: [TranscriptSegment], silences: [TimeRange], sourceRange: TimeRange,
                              media: MediaInfo, settings: ExportSettings) throws -> EditDecisionList {
-        // 1. 유지 세그먼트만
-        let kept = segments.filter { !$0.isRemoved }.sorted { $0.start < $1.start }
-        guard !kept.isEmpty else { throw SermonCutError.emptyEditDecisionList }
+        // 1. 유지 세그먼트만 (시간 순). 삭제 세그먼트가 사이에 있는 곳에서만 끊는다 —
+        //    세그먼트 사이의 자연스러운 쉼(VAD 공백)은 자르지 않는다.
+        let ordered = segments.sorted { $0.start < $1.start }
+        guard ordered.contains(where: { !$0.isRemoved }) else { throw SermonCutError.emptyEditDecisionList }
 
-        // 2. 인접 병합 → keepRanges (말소리 경계도 함께 보관: 무음 스냅 방향 제한용)
+        // 2. 연속 유지 세그먼트 → keepRanges, 그다음 간격이 mergeGap 미만이면 병합
+        //    (말소리 경계도 보관: 무음 스냅 방향 제한용)
         struct Range { var start: Double; var end: Double; var speechStart: Double; var speechEnd: Double; var ids: [String] }
         var ranges: [Range] = []
-        for s in kept {
-            if var last = ranges.last, s.start - last.end < settings.mergeGap {
+        var breakBefore = true
+        for s in ordered {
+            if s.isRemoved { breakBefore = true; continue }
+            if !breakBefore, var last = ranges.last {
+                last.end = max(last.end, s.end)
+                last.speechEnd = max(last.speechEnd, s.end)
+                last.ids.append(s.id)
+                ranges[ranges.count - 1] = last
+            } else if var last = ranges.last, s.start - last.end < settings.mergeGap {
                 last.end = max(last.end, s.end)
                 last.speechEnd = max(last.speechEnd, s.end)
                 last.ids.append(s.id)
@@ -62,6 +71,7 @@ public enum EDLBuilder {
             } else {
                 ranges.append(Range(start: s.start, end: s.end, speechStart: s.start, speechEnd: s.end, ids: [s.id]))
             }
+            breakBefore = false
         }
 
         // 3. 패딩

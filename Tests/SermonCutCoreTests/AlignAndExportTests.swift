@@ -52,7 +52,7 @@ final class AlignAndExportTests: XCTestCase {
         for k in 0..<8 { add("교단 총회 소식을 전하겠습니다 이번 주 월요일 \(k)", 5) } // 40초 탈선 → 삭제
         add("원고 문장 번호 3번 내용은 이러합니다 가나다라마바사 3", 5)
         let align = LocalAligner().align(segments: segs, sentences: sentences)
-        let out = RemovalSuggester().apply(segments: segs, alignment: align, sourceRange: TimeRange(start: 0, end: t), hasManuscript: true)
+        let out = RemovalSuggester().apply(segments: segs, alignment: align, sentences: sentences, sourceRange: TimeRange(start: 0, end: t))
         XCTAssertEqual(out.suggestions.count, 1)
         XCTAssertEqual(out.suggestions[0].range.start, 16, accuracy: 1e-9)
         XCTAssertEqual(out.suggestions[0].range.end, 56, accuracy: 1e-9)
@@ -71,7 +71,7 @@ final class AlignAndExportTests: XCTestCase {
         add("아멘", 1)
         add("원고 문장 번호 1번 내용은 이러합니다 가나다라마바사", 5)
         let align = LocalAligner().align(segments: segs, sentences: sentences)
-        let out = RemovalSuggester().apply(segments: segs, alignment: align, sourceRange: TimeRange(start: 0, end: t), hasManuscript: true)
+        let out = RemovalSuggester().apply(segments: segs, alignment: align, sentences: sentences, sourceRange: TimeRange(start: 0, end: t))
         XCTAssertEqual(out.readingRange?.end ?? 0, 111, accuracy: 1e-9)
         XCTAssertTrue(out.suggestions.isEmpty)
         XCTAssertFalse(out.segments.contains { $0.isRemoved })
@@ -80,7 +80,7 @@ final class AlignAndExportTests: XCTestCase {
     func testNoManuscriptMeansNoSuggestions() {
         let segs = [seg(1, 0, 100, "아무 말")]
         let out = RemovalSuggester().apply(segments: segs, alignment: LocalAligner().align(segments: segs, sentences: []),
-                                           sourceRange: TimeRange(start: 0, end: 100), hasManuscript: false)
+                                           sentences: [], sourceRange: TimeRange(start: 0, end: 100))
         XCTAssertTrue(out.suggestions.isEmpty)
         XCTAssertEqual(out.segments[0].alignStatus, .notAligned)
     }
@@ -90,7 +90,7 @@ final class AlignAndExportTests: XCTestCase {
         var segs = (0..<10).map { seg($0 + 1, Double($0) * 5, Double($0 + 1) * 5, "원고와 전혀 상관없는 다른 이야기 \($0)") }
         segs[3].userOverridden = true
         let out = RemovalSuggester().apply(segments: segs, alignment: LocalAligner().align(segments: segs, sentences: sentences),
-                                           sourceRange: TimeRange(start: 0, end: 50), hasManuscript: true)
+                                           sentences: sentences, sourceRange: TimeRange(start: 0, end: 50))
         XCTAssertFalse(out.segments[3].isRemoved)
         XCTAssertTrue(out.segments[2].isRemoved)
     }

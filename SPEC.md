@@ -700,16 +700,16 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] `docs/hwpx-structure.md` 작성 — 실제 요소명/네임스페이스 기록
 - [ ] Phase 0과 병행 가능
 
-### Phase 1 — CLI 프로토타입
-- [ ] `ProcessRunner`, `BinaryLocator`
-- [ ] `MediaProbe`, `AudioExtractor`(구간 지정), `SilenceDetector`
-- [ ] `WhisperTranscriber` + `TranscriptParser` (**sourceRange offset 적용 + 단위 테스트**)
-- [ ] `ManuscriptLoader` / `HwpxParser` / `DocxParser` / `SentenceSplitter`
-- [ ] `LocalAligner` (AI 없이 n-gram DP 정렬만)
-- [ ] `EDLBuilder` + `FrameSnapper` + `HandleValidator` (sourceRange 클램프 포함)
-- [ ] `FCPXMLExporter`
-- [ ] 이 단계에서 구간은 CLI 인자로 하드코딩 (`--in 00:24:13 --out 01:16:48`)
-- [ ] **검증**: 실제 이번 주 예배 영상 + hwpx 원고로 end-to-end 실행, FCP 임포트 성공
+### Phase 1 — CLI 프로토타입 ✅ (결과: `docs/phase1-report.md`)
+- [x] `ProcessRunner`, `BinaryLocator`
+- [x] `MediaProbe`, `AudioExtractor`(구간 지정), `SilenceDetector`
+- [x] `WhisperTranscriber` + `TranscriptParser` (**sourceRange offset 적용 + 단위 테스트**) — `-mc 0 --vad` 필수 (docs/whisper-notes.md)
+- [x] `ManuscriptLoader` / `HwpxParser` / `DocxParser` / `SentenceSplitter`
+- [x] `LocalAligner` (AI 없이 n-gram DP 정렬만) + `RemovalSuggester`(무매칭 연속 구간 단위 제안)
+- [x] `EDLBuilder` + `FrameSnapper` + `HandleValidator` (sourceRange 클램프 포함)
+- [x] `FCPXMLExporter` (챕터 마커 포함)
+- [x] 이 단계에서 구간은 CLI 인자로 하드코딩 (`--in 36:00 --out 1:22:33`)
+- [x] **검증**: 09/13 예배 영상 + hwpx 원고로 end-to-end 실행(289초), FCP 임포트 성공, 수작업 편집 대비 재현율 98.5%·정밀도 69.4%
 - 태그: `v0.1-phase1`
 
 ### Phase 2 — SwiftUI 앱 (구간 선택 포함)

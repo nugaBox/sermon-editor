@@ -92,6 +92,14 @@ final class EditTests: XCTestCase {
         XCTAssertEqual(edl.clips[1].sourceStartFrame, 3882)  // 129.4s
     }
 
+    func testNaturalPausesAreNotCut() throws {
+        // 삭제 세그먼트가 없으면 세그먼트 사이 3초 쉼도 자르지 않는다
+        let segs = [seg("T1", 100, 110), seg("T2", 113, 120), seg("T3", 121, 130)]
+        let edl = try EDLBuilder.build(segments: segs, silences: [], sourceRange: TimeRange(start: 0, end: 500), media: media30, settings: settings())
+        XCTAssertEqual(edl.clips.count, 1)
+        XCTAssertEqual(edl.clips[0].durationFrames, 900)
+    }
+
     func testAllRemovedThrows() {
         XCTAssertThrowsError(try EDLBuilder.build(segments: [seg("T1", 0, 1, removed: true)], silences: [],
                                                   sourceRange: TimeRange(start: 0, end: 10), media: media30, settings: settings()))

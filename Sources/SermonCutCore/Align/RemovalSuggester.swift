@@ -15,6 +15,13 @@ public struct RemovalSuggester: Sendable {
         public var protectOpeningReading: Bool = true
         /// 봉독 보호를 찾는 범위: sourceRange 시작 후 이 시간 안에서만 (초)
         public var readingSearchSeconds: Double = 600
+        /// 이 간격보다 가까운 무매칭 구간들은 하나의 탈선으로 합친다 (초)
+        public var mergeRunGap: Double = 5
+        /// 화제 이탈 판정: 주변 원고(앞뒤 매칭 문장 ±localWindow)와의 어휘 겹침(idf 가중)이 이 값 미만
+        public var offTopicLocalMax: Double = 0.2
+        /// 그리고 원고 전체와의 어휘 겹침이 이 값 미만
+        public var offTopicGlobalMax: Double = 0.4
+        public var localWindow: Int = 8
         public init() {}
     }
 
@@ -22,14 +29,19 @@ public struct RemovalSuggester: Sendable {
         public var range: TimeRange
         public var segmentIDs: [String]
         public var reason: UnmatchedReason
+        /// true: 화제 이탈로 판단해 삭제 표시함 / false: 원고와 어휘가 겹쳐 유지하고 "확인 필요"만 표시
+        public var removed: Bool
+        public var localOverlap: Double
+        public var globalOverlap: Double
     }
 
     public var config: Config
     public init(config: Config = Config()) { self.config = config }
 
     /// 세그먼트에 정렬 결과와 삭제 제안을 기록해 돌려준다. 사용자가 이미 뒤집은 세그먼트(userOverridden)는 건드리지 않는다.
-    public func apply(segments: [TranscriptSegment], alignment: [LocalAligner.Result],
-                      sourceRange: TimeRange, hasManuscript: Bool) -> (segments: [TranscriptSegment], suggestions: [Suggestion], readingRange: TimeRange?) {
+    public func apply(segments: [TranscriptSegment], alignment: [LocalAligner.Result], sentences: [ManuscriptSentence],
+                      sourceRange: TimeRange) -> (segments: [TranscriptSegment], suggestions: [Suggestion], readingRange: TimeRange?) {
+        let hasManuscript = !sentences.isEmpty
         var segs = segments
         let byID = Dictionary(uniqueKeysWithValues: alignment.map { ($0.segmentID, $0) })
         for i in segs.indices {
@@ -75,17 +87,38 @@ public struct RemovalSuggester: Sendable {
             i = end + 1
         }
 
-        var suggestions: [Suggestion] = []
+        // 짧은 간격으로 끊긴 무매칭 구간은 하나의 탈선으로 합친다
+        var mergedRuns: [ClosedRange<Int>] = []
         for run in runs {
+            if let last = mergedRuns.last, segs[run.lowerBound].start - segs[last.upperBound].end < config.mergeRunGap,
+               !segs[(last.upperBound + 1)..<run.lowerBound].contains(where: protected) {
+                mergedRuns[mergedRuns.count - 1] = last.lowerBound...run.upperBound
+            } else {
+                mergedRuns.append(run)
+            }
+        }
+
+        let topic = TopicOverlap(sentences: sentences)
+        var suggestions: [Suggestion] = []
+        for run in mergedRuns {
             let start = segs[run.lowerBound].start, end = segs[run.upperBound].end
             guard end - start >= config.minRunSeconds else { continue }
+            let text = segs[run].map(\.text).joined(separator: " ")
+            // 주변 원고 범위: 앞뒤로 가장 가까운 매칭 문장
+            let before = segs[..<run.lowerBound].last { $0.alignStatus == .matched }?.matchedManuscriptID
+            let after = segs[(run.upperBound + 1)...].first { $0.alignStatus == .matched }?.matchedManuscriptID
+            let local = topic.overlap(text, around: before, after, window: config.localWindow)
+            let global = topic.overlap(text)
+            let offTopic = local < config.offTopicLocalMax && global < config.offTopicGlobalMax
             var ids: [String] = []
             for j in run where !segs[j].userOverridden {
-                segs[j].isRemoved = true
-                segs[j].unmatchedReason = .improvised
+                segs[j].isRemoved = offTopic
+                segs[j].unmatchedReason = offTopic ? .improvised : .unknown
                 ids.append(segs[j].id)
             }
-            suggestions.append(Suggestion(range: TimeRange(start: start, end: end), segmentIDs: ids, reason: .improvised))
+            suggestions.append(Suggestion(range: TimeRange(start: start, end: end), segmentIDs: ids,
+                                          reason: offTopic ? .improvised : .unknown, removed: offTopic,
+                                          localOverlap: local, globalOverlap: global))
         }
         return (segs, suggestions, reading)
     }
@@ -105,5 +138,52 @@ public struct RemovalSuggester: Sendable {
             }
         }
         return nil
+    }
+}
+
+/// 발화 묶음과 원고의 어휘 겹침 (bigram, idf 가중). 화제 이탈(시사·교단 소식·근황)은 원고 어휘와 거의 겹치지 않는다.
+struct TopicOverlap {
+    let sentences: [ManuscriptSentence]
+    let grams: [Set<String>]
+    let df: [String: Int]
+    let index: [String: Int]
+
+    init(sentences: [ManuscriptSentence]) {
+        self.sentences = sentences
+        grams = sentences.map { TextNormalizer.bigrams($0.text) }
+        var df: [String: Int] = [:]
+        for g in grams { for b in g { df[b, default: 0] += 1 } }
+        self.df = df
+        index = Dictionary(uniqueKeysWithValues: sentences.enumerated().map { ($1.id, $0) })
+    }
+
+    /// 전체 원고 기준
+    func overlap(_ text: String) -> Double {
+        weighted(text) { df[$0] != nil }
+    }
+
+    /// 앞뒤 매칭 문장 사이 ± window 문장 기준
+    func overlap(_ text: String, around before: String?, _ after: String?, window: Int) -> Double {
+        guard !sentences.isEmpty else { return 0 }
+        let lo = before.flatMap { index[$0] } ?? 0
+        let hi = after.flatMap { index[$0] } ?? sentences.count - 1
+        let range = max(0, min(lo, hi) - window)...min(sentences.count - 1, max(lo, hi) + window)
+        var local = Set<String>()
+        for i in range { local.formUnion(grams[i]) }
+        return weighted(text) { local.contains($0) }
+    }
+
+    private func weighted(_ text: String, _ hit: (String) -> Bool) -> Double {
+        let chars = Array(TextNormalizer.normalize(text))
+        guard chars.count >= 2, !sentences.isEmpty else { return 0 }
+        let n = Double(sentences.count)
+        var total = 0.0, found = 0.0
+        for i in 0..<(chars.count - 1) {
+            let b = String(chars[i...i + 1])
+            let w = log(n / Double(df[b] ?? 1))   // 원고에 없는 bigram도 희귀어로 취급
+            total += w
+            if hit(b) { found += w }
+        }
+        return total > 0 ? found / total : 0
     }
 }

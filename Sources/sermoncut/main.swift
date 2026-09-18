@@ -109,15 +109,23 @@ func printSummary(_ p: SermonProject) {
         print("정렬: 매칭 \(matched)개 (\(segs.isEmpty ? 0 : matched * 100 / segs.count)%)")
     }
     print("삭제 제안: 세그먼트 \(removed.count)개, \(Timecode.format(removedSeconds))")
-    for r in removalRuns(p) {
+    for r in runs(p, where: { $0.isRemoved }) {
         let first = p.segments.first { $0.start >= r.start }?.text ?? ""
         print("  ✂︎ \(Timecode.format(r.start)) ~ \(Timecode.format(r.end)) (\(String(format: "%.1f", r.duration))초) \(first.prefix(40))…")
     }
+    let review = runs(p, where: { !$0.isRemoved && $0.unmatchedReason == .unknown })
+    if !review.isEmpty {
+        print("확인 필요(원고와 안 맞지만 주제는 가까워 유지함): \(review.count)곳")
+        for r in review {
+            let first = p.segments.first { $0.start >= r.start }?.text ?? ""
+            print("  ⚠︎ \(Timecode.format(r.start)) ~ \(Timecode.format(r.end)) (\(String(format: "%.1f", r.duration))초) \(first.prefix(40))…")
+        }
+    }
 }
 
-func removalRuns(_ p: SermonProject) -> [TimeRange] {
+func runs(_ p: SermonProject, where include: (TranscriptSegment) -> Bool) -> [TimeRange] {
     var runs: [TimeRange] = []
-    for s in p.segments where s.isRemoved {
+    for s in p.segments where include(s) {
         if var last = runs.last, s.start - last.end < 2 {
             last.end = s.end
             runs[runs.count - 1] = last
@@ -247,7 +255,7 @@ func transcript(_ args: Args) throws {
     let p = try ProjectFile.load(fileURL(try args.require("project")))
     let sentences = Dictionary(uniqueKeysWithValues: (p.manuscript?.sentences ?? []).map { ($0.id, $0.text) })
     for s in p.segments {
-        let mark = s.isRemoved ? "✂︎" : (s.alignStatus == .matched ? "✓" : "·")
+        let mark = s.isRemoved ? "✂︎" : (s.alignStatus == .matched ? "✓" : (s.unmatchedReason == .unknown ? "⚠︎" : "·"))
         var line = "\(mark) \(Timecode.format(s.start)) \(s.id) [\(String(format: "%.2f", s.confidence ?? 0))] \(s.text)"
         if args.flags.contains("all"), let m = s.matchedManuscriptID, let t = sentences[m] { line += "\n      ↳ \(m): \(t)" }
         print(line)
