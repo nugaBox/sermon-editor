@@ -37,3 +37,7 @@ SermonCut/Resources/bin/
 
 # 샘플 원고 (개인 문서 — 필요 시 명시적으로 추가)
 samples/
+
+# Final Cut Pro 보관함
+*.fcpbundle/
+*.fcpxmld/
