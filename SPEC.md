@@ -712,15 +712,16 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] **검증**: 09/13 예배 영상 + hwpx 원고로 end-to-end 실행(289초), FCP 임포트 성공, 수작업 편집 대비 재현율 98.5%·정밀도 69.4%
 - 태그: `v0.1-phase1`
 
-### Phase 2 — SwiftUI 앱 (구간 선택 포함)
-- [ ] `WelcomeView` — 영상 파일 선택
-- [ ] `WaveformGenerator` + `WaveformView` — 파형 렌더 및 캐시
-- [ ] `RangeSelectView` — In/Out 마커, J/K/L, 프레임 단위 이동
-- [ ] `ManuscriptPickerView` — hwpx/docx/txt 선택 + 파싱 결과 미리보기
-- [ ] `AnalyzeProgressView` — 단계별 진행률, 취소
-- [ ] `EditorView` — 세그먼트 리스트, 토글, 키보드 단축키, Undo
-- [ ] 타임라인 스트립
-- [ ] 프로젝트 저장/불러오기 (`.sermoncut`)
+### Phase 2 — SwiftUI 앱 (구간 선택 포함) ✅ (결과: `docs/phase2-report.md`)
+- [x] `WelcomeView` — 영상 파일 선택
+- [x] `WaveformGenerator` + `WaveformView` — 파형 렌더 및 캐시 (92분 6초)
+- [x] `RangeSelectView` — In/Out 마커, J/K/L, 프레임 단위 이동
+- [x] `ManuscriptPickerView` — hwpx/docx/txt 선택 + 파싱 결과 미리보기
+- [x] `AnalyzeProgressView` — 단계별 진행률, 취소
+- [x] `EditorView` — 세그먼트 리스트, 토글, 키보드 단축키, Undo
+- [x] 타임라인 스트립
+- [x] 프로젝트 저장/불러오기 (`.sermoncut`)
+- [x] 앱 셀프테스트(`--selftest`) 26항목 통과
 - 태그: `v0.2-phase2`
 
 ### Phase 3 — AI 정렬

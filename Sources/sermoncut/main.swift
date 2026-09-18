@@ -11,6 +11,7 @@ let usage = """
   sermoncut realign  --project 프로젝트.sermoncut [--run 초] [--threshold 0.3]
   sermoncut transcript --project 프로젝트.sermoncut [--all]
   sermoncut manuscript 원고파일
+  sermoncut waveform --video 영상          (파형 생성 시간 측정, 캐시 없이)
 
 시간은 1:22:33.4 / 22:33 / 4953.4 형식 모두 가능. 모든 시간은 원본 영상 0초 기준.
 """
@@ -148,28 +149,13 @@ func export(_ args: Args) throws {
     let video = URL(fileURLWithPath: project.videoPath)
     var options = FCPXMLExporter.Options(eventName: "SermonCut", projectName: video.deletingPathExtension().lastPathComponent + " (SermonCut)",
                                          audioGainDB: settings.audioGainDB)
-    options.chapterMarkers = chapterMarkers(project)
+    options.chapterMarkers = ChapterMarkers.fromManuscript(project).map { ($0.sourceSeconds, $0.title) }
     let xml = FCPXMLExporter().export(edl: edl, videoURL: video, options: options)
     do { try xml.write(to: out, atomically: true, encoding: .utf8) } catch {
         throw SermonCutError.fileWriteFailed(path: out.path, reason: error.localizedDescription)
     }
     printEDL(edl)
     print("FCPXML: \(out.path)")
-}
-
-/// 원고 소제목 → 첫 문장이 매칭된 세그먼트 시작 (Phase 5b에서 오버레이 OCR 등과 결합 예정)
-func chapterMarkers(_ p: SermonProject) -> [(sourceSeconds: Double, title: String)] {
-    guard let m = p.manuscript else { return [] }
-    var result: [(Double, String)] = []
-    for h in m.headings {
-        guard let first = h.firstSentenceID, let order = m.sentences.first(where: { $0.id == first })?.order else { continue }
-        // 이 대지에 속한 문장 중 가장 먼저 매칭된 세그먼트
-        let ids = Set(m.sentences.filter { $0.order >= order && $0.sectionIndex == h.number }.map(\.id))
-        if let seg = p.segments.first(where: { !$0.isRemoved && $0.matchedManuscriptID.map(ids.contains) == true }) {
-            result.append((seg.start, "\(h.number). \(h.title)"))
-        }
-    }
-    return result
 }
 
 func printEDL(_ edl: EditDecisionList) {
@@ -272,6 +258,14 @@ func manuscript(_ args: Args) async throws {
     for s in m.sentences { print("  \(s.id) [\(s.sectionIndex)\(s.isScripture ? " 성경" : "")] \(s.text)") }
 }
 
+func waveform(_ args: Args) async throws {
+    let video = fileURL(try args.require("video"))
+    let started = Date()
+    let w = try await WaveformGenerator().generate(video: video, cacheDirectory: nil)
+    let peak = w.peaks.max() ?? 0
+    print(String(format: "버킷 %d개 (%.1f초 분량), 최대 %.2f, 소요 %.1f초", w.peaks.count, w.duration, peak, Date().timeIntervalSince(started)))
+}
+
 // MARK: - 진입점
 
 let args = Args(Array(CommandLine.arguments.dropFirst()))
@@ -283,6 +277,7 @@ do {
     case "realign": try realign(args)
     case "transcript": try transcript(args)
     case "manuscript": try await manuscript(args)
+    case "waveform": try await waveform(args)
     default: print(usage)
     }
 } catch {
