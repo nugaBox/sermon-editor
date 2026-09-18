@@ -20,6 +20,8 @@ public struct FFmpegRenderer: Sendable {
         public var fadeOut: Double = 0
         /// 커버 이미지(썸네일) — final에서만 첨부
         public var coverImage: URL?
+        /// 인트로(썸네일+음악)·아웃트로(끝 화면+음악) — FCPXML과 같은 구성 (Phase 6)
+        public var bookends: FCPXMLExporter.Bookends?
         public init(preset: Preset, audioGainDB: Double) {
             self.preset = preset
             self.audioGainDB = audioGainDB
@@ -40,15 +42,22 @@ public struct FFmpegRenderer: Sendable {
         defer { try? FileManager.default.removeItem(at: script) }
 
         var args = ["-nostdin", "-hide_banner", "-v", "error", "-y"]
+        let fps = "\(edl.media.frameRateNum)/\(edl.media.frameRateDen)"
         for input in plan.inputs {
-            args += ["-ss", String(format: "%.6f", input.start), "-t", String(format: "%.6f", input.duration), "-i", video.path]
+            switch input.kind {
+            case .video:
+                args += ["-ss", String(format: "%.6f", input.start), "-t", String(format: "%.6f", input.duration), "-i", video.path]
+            case .still(let image, let audio):
+                args += ["-loop", "1", "-framerate", fps, "-t", String(format: "%.6f", input.duration), "-i", image.path]
+                args += ["-i", audio.path]
+            }
         }
         var filter = plan.filter
         let hasCover = options.preset == .final && options.coverImage != nil
         if hasCover, let cover = options.coverImage {
             args += ["-i", cover.path]
             // 커버를 영상 해상도로 (Compressor 결과물과 같게 1920x1080)
-            filter += ";\n[\(plan.inputs.count):v]scale=\(edl.media.width):\(edl.media.height):force_original_aspect_ratio=decrease,pad=\(edl.media.width):\(edl.media.height):(ow-iw)/2:(oh-ih)/2,setsar=1[cover]"
+            filter += ";\n[\(plan.inputCount):v]scale=\(edl.media.width):\(edl.media.height):force_original_aspect_ratio=decrease,pad=\(edl.media.width):\(edl.media.height):(ow-iw)/2:(oh-ih)/2,setsar=1[cover]"
         }
         try filter.write(to: script, atomically: true, encoding: .utf8)
         // ffmpeg 7부터 -filter_complex_script 대신 "-/옵션 파일" 형식 (명령행 길이 제한 회피, SPEC §6.5)
@@ -79,10 +88,15 @@ public struct FFmpegRenderer: Sendable {
     // MARK: - 필터 그래프 (테스트 가능하도록 분리)
 
     public struct Plan: Sendable {
-        public struct Input: Sendable { public var start: Double; public var duration: Double }
+        public enum Kind: Sendable { case video, still(image: URL, audio: URL) }
+        public struct Input: Sendable { public var start: Double; public var duration: Double; public var kind: Kind = .video }
         public var inputs: [Input]
         public var filter: String
         public var duration: Double
+        /// ffmpeg 입력 파일 수 (정지 화면은 이미지+음악 2개)
+        public var inputCount: Int {
+            inputs.reduce(0) { n, i in if case .still = i.kind { return n + 2 } else { return n + 1 } }
+        }
     }
 
     public static func plan(edl: EditDecisionList, options: Options) -> Plan {
@@ -90,31 +104,59 @@ public struct FFmpegRenderer: Sendable {
         let snap = FrameSnapper(media: media)
         let fps = "\(media.frameRateNum)/\(media.frameRateDen)"
         let size = options.preset == .preview ? "960:540" : "\(media.width):\(media.height)"
-        let clips = edl.clips
-        // 편집점별 전환 길이(프레임) — 0이면 하드컷
-        let trans: [Int] = (0..<max(0, clips.count - 1)).map { i in edl.transitions.first { $0.afterClip == i }?.durationFrames ?? 0 }
+        let b = options.bookends
+
+        // 항목: [인트로] + 설교 클립들 + [아웃트로], 사이 전환(프레임, xfade 종류)
+        enum Item { case clip(EDLClip), still(URL, URL, Int) }
+        var items: [Item] = []
+        var trans: [(frames: Int, kind: String)] = []
+        if let b {
+            items.append(.still(b.thumbnail.url, b.introAudio.url, snap.frame(b.introSeconds)))
+            trans.append((HandleValidator.evenFrames(snap.frame(b.introFadeSeconds)), "fadeblack"))
+        }
+        for (i, c) in edl.clips.enumerated() {
+            items.append(.clip(c))
+            if i < edl.clips.count - 1 { trans.append((edl.transitions.first { $0.afterClip == i }?.durationFrames ?? 0, "fade")) }
+        }
+        if let b {
+            trans.append((HandleValidator.evenFrames(snap.frame(b.outroFadeSeconds)), "fadeblack"))
+            items.append(.still(b.endPoster.url, b.outroAudio.url, snap.frame(b.posterSeconds)))
+        }
 
         var inputs: [Plan.Input] = []
         var lines: [String] = []
-        for (i, c) in clips.enumerated() {
-            // 핸들: 앞 전환의 절반만큼 앞으로, 뒤 전환의 절반만큼 뒤로 늘린다
-            let headFrames = i > 0 ? trans[i - 1] / 2 : 0
-            let tailFrames = i < trans.count ? trans[i] / 2 : 0
-            let start = snap.seconds(c.sourceStartFrame - headFrames)
-            let dur = snap.seconds(c.durationFrames + headFrames + tailFrames)
-            inputs.append(.init(start: start, duration: dur))
-            lines.append("[\(i):v]setpts=PTS-STARTPTS,fps=\(fps),scale=\(size):force_original_aspect_ratio=decrease,pad=\(size):(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,settb=AVTB[v\(i)]")
-            lines.append("[\(i):a]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=\(options.audioGainDB)dB[a\(i)]")
+        var ffIndex = 0
+        for (i, item) in items.enumerated() {
+            // 핸들: 앞 전환의 절반만큼 앞으로, 뒤 전환의 절반만큼 뒤로 늘린다 (FCP와 같음)
+            let head = i > 0 ? trans[i - 1].frames / 2 : 0
+            let tail = i < trans.count ? trans[i].frames / 2 : 0
+            let vchain = "setpts=PTS-STARTPTS,fps=\(fps),scale=\(size):force_original_aspect_ratio=decrease,pad=\(size):(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,settb=AVTB"
+            switch item {
+            case .clip(let c):
+                let dur = snap.seconds(c.durationFrames + head + tail)
+                inputs.append(.init(start: snap.seconds(c.sourceStartFrame - head), duration: dur))
+                lines.append("[\(ffIndex):v]\(vchain)[v\(i)]")
+                lines.append("[\(ffIndex):a]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=\(options.audioGainDB)dB[a\(i)]")
+                ffIndex += 1
+            case .still(let image, let audio, let frames):
+                let dur = snap.seconds(frames + head + tail)
+                inputs.append(.init(start: 0, duration: dur, kind: .still(image: image, audio: audio)))
+                lines.append("[\(ffIndex):v]\(vchain)[v\(i)]")
+                // 음악은 정지 화면 구간 시작부터 (앞 핸들만큼 늦게), 길이를 화면에 맞춤
+                let delayMs = Int((snap.seconds(head) * 1000).rounded())
+                lines.append("[\(ffIndex + 1):a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=\(delayMs)|\(delayMs),apad,atrim=0:\(fmt(dur)),asetpts=PTS-STARTPTS[a\(i)]")
+                ffIndex += 2
+            }
         }
 
-        // 체인: 늘린 길이 기준 누적 길이 L. 디졸브는 offset = L − d, 결과 길이 = L + len − d
+        // 체인: 늘린 길이 기준 누적 길이 L. 전환은 offset = L − d, 결과 길이 = L + len − d
         var vPrev = "v0", aPrev = "a0"
         var L = inputs.first?.duration ?? 0
-        for i in 1..<max(1, clips.count) {
-            let d = snap.seconds(trans[i - 1])
+        for i in 1..<max(1, items.count) {
+            let d = snap.seconds(trans[i - 1].frames)
             let vOut = "vx\(i)", aOut = "ax\(i)"
             if d > 0 {
-                lines.append("[\(vPrev)][v\(i)]xfade=transition=fade:duration=\(fmt(d)):offset=\(fmt(L - d))[\(vOut)]")
+                lines.append("[\(vPrev)][v\(i)]xfade=transition=\(trans[i - 1].kind):duration=\(fmt(d)):offset=\(fmt(L - d))[\(vOut)]")
                 lines.append("[\(aPrev)][a\(i)]acrossfade=d=\(fmt(d)):c1=tri:c2=tri[\(aOut)]")
                 L += inputs[i].duration - d
             } else {
@@ -124,16 +166,16 @@ public struct FFmpegRenderer: Sendable {
             }
             vPrev = vOut; aPrev = aOut
         }
-        var vFinal = "[\(vPrev)]", aFinal = "[\(aPrev)]"
         var vf: [String] = [], af: [String] = []
-        if options.fadeIn > 0 { vf.append("fade=t=in:st=0:d=\(fmt(options.fadeIn))"); af.append("afade=t=in:st=0:d=\(fmt(options.fadeIn))") }
-        if options.fadeOut > 0 {
-            vf.append("fade=t=out:st=\(fmt(L - options.fadeOut)):d=\(fmt(options.fadeOut))")
-            af.append("afade=t=out:st=\(fmt(L - options.fadeOut)):d=\(fmt(options.fadeOut))")
+        let fadeIn = b.map { $0.edgeDissolveSeconds } ?? options.fadeIn
+        let fadeOut = b.map { $0.edgeDissolveSeconds } ?? options.fadeOut
+        if fadeIn > 0 { vf.append("fade=t=in:st=0:d=\(fmt(fadeIn))"); af.append("afade=t=in:st=0:d=\(fmt(fadeIn))") }
+        if fadeOut > 0 {
+            vf.append("fade=t=out:st=\(fmt(L - fadeOut)):d=\(fmt(fadeOut))")
+            af.append("afade=t=out:st=\(fmt(L - fadeOut)):d=\(fmt(fadeOut))")
         }
-        lines.append("\(vFinal)\(vf.isEmpty ? "null" : vf.joined(separator: ","))[vout]")
-        lines.append("\(aFinal)\(af.isEmpty ? "anull" : af.joined(separator: ","))[aout]")
-        vFinal = "[vout]"; aFinal = "[aout]"
+        lines.append("[\(vPrev)]\(vf.isEmpty ? "null" : vf.joined(separator: ","))[vout]")
+        lines.append("[\(aPrev)]\(af.isEmpty ? "anull" : af.joined(separator: ","))[aout]")
         return Plan(inputs: inputs, filter: lines.joined(separator: ";\n"), duration: L)
     }
 

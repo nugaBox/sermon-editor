@@ -57,6 +57,8 @@ struct SermonCutApp: App {
                 Button("삭제/복원 전환") { if state.screen == .editor { state.toggleRemoved(state.selection) } }
                 Button("설교 목차…") { if state.screen == .editor { state.showChapters = true } }
                     .keyboardShortcut("t")
+                Button("썸네일·인트로/아웃트로…") { if state.screen == .editor { state.showThumbnail = true } }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
                 Divider()
                 Button("AI 판정…") { if state.screen == .editor { state.requestAIJudgement() } }
                     .keyboardShortcut("j", modifiers: [.command, .shift])
@@ -153,7 +155,9 @@ enum FilePanels {
         panel.directoryURL = state.videoURL?.deletingLastPathComponent()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         var cover: URL?
-        if preset == .final {
+        // 템플릿(썸네일)이 준비돼 있으면 썸네일을 커버로 자동 사용
+        let templateReady = state.useTemplate && state.templatePack.hasThumbnail
+        if preset == .final && !templateReady {
             let alert = NSAlert()
             alert.messageText = "커버 이미지(썸네일)를 넣을까요?"
             alert.informativeText = "유튜브 업로드용 mp4에 썸네일을 커버로 첨부합니다."

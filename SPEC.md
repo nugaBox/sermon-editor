@@ -761,15 +761,18 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] **검증**: 09/13 사용자 목차와 원고만 / 붙여넣기만 / 화면만 세 경우 모두 ±1초
 - 태그: `v0.5b-phase5b`
 
-### Phase 6 — 인트로/아웃트로/썸네일
+### Phase 6 — 인트로/아웃트로/썸네일 ✅ (결과: `docs/phase6-report.md`, Photoshop 자동화만 미검증)
 실제 구조(Phase 0 실측, `docs/fcpxml-reference.md` §3):
 - 인트로: 썸네일 jpg 10.067초 + 연결 오디오 `갓피플NCB-ToTheLord-10s.mp3`, 맨 앞 교차 디졸브(페이드인), 설교 첫 클립과 **색상으로 페이드** 2.467초
 - 아웃트로: 마지막 설교 클립 끝부분에 연결 오디오 `갓피플NCB-Hope-15s.mp3`, **색상으로 페이드** 1.6초 → `end-poster-YYYY.jpg` 14.7초 → 끝 교차 디졸브(페이드아웃)
 - 설교 오디오 **+12dB** (`ExportSettings.audioGainDB`)
 - 데이터 모델에 `headClip`, `tailClip`, `bgmTrack` 필드를 **Phase 1부터 미리 넣어둔다** (값은 nil 허용).
 - 에셋(mp3, end-poster)은 설정에 "템플릿 폴더"로 등록. end-poster는 매년 바뀌므로 파일 선택 가능하게.
-- [ ] 썸네일 자동 생성 (6.7절)
-- [ ] 최종 mp4 렌더 옵션: Compressor 설정과 동일하게 H.264 Main 5,000kbps / AAC 128k / 썸네일 커버 첨부 (`docs/fcpxml-reference.md` §8)
+- [x] 템플릿 팩(`~/Library/Application Support/SermonCut/templates/sunday`) + 재료 교체 UI
+- [x] 썸네일 자동 생성 (6.7절 B안, 1줄/2줄 자동) — A안(Photoshop)은 구현, 로그인 창 때문에 미검증
+- [x] FCPXML 앞뒤 구성 (09/13 완성본과 같은 값), FCP 임포트 확인
+- [x] 최종 mp4 렌더: Compressor 설정과 동일 + 인트로/아웃트로 + 썸네일 커버
+- 태그: `v0.6-phase6`
 
 ---
 

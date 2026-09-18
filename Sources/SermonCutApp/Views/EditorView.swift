@@ -50,6 +50,9 @@ struct EditorView: View {
         .sheet(isPresented: Binding(get: { state.showChapters }, set: { state.showChapters = $0 })) {
             ChaptersView().environment(state)
         }
+        .sheet(isPresented: Binding(get: { state.showThumbnail }, set: { state.showThumbnail = $0 })) {
+            ThumbnailView().environment(state)
+        }
         .alert("렌더", isPresented: Binding(get: { state.renderMessage != nil }, set: { if !$0 { state.renderMessage = nil } })) {
             Button("열기") { if let u = state.lastRenderURL { NSWorkspace.shared.open(u) }; state.renderMessage = nil }
             Button("Finder에서 보기") { if let u = state.lastRenderURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }; state.renderMessage = nil }
@@ -214,6 +217,8 @@ struct EditorView: View {
                 }
                 Button("목차…") { state.showChapters = true }
                     .help("유튜브 챕터용 설교 목차 (⌘T)")
+                Button("썸네일…") { state.showThumbnail = true }
+                    .help("썸네일과 인트로/아웃트로 (⇧⌘T)")
                 Toggle("내보낸 뒤 FCP로 열기", isOn: Binding(get: { state.openInFCPAfterExport }, set: { state.openInFCPAfterExport = $0 }))
                     .toggleStyle(.checkbox)
                 Button("FCPXML 내보내기…") { FilePanels.exportFCPXML(state) }

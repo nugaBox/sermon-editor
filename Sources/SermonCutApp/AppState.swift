@@ -85,6 +85,16 @@ final class AppState {
     }
     @ObservationIgnored private var overlayTask: Task<Void, Never>?
 
+    // MARK: 인트로/아웃트로/썸네일 (Phase 6)
+    var showThumbnail = false
+    var templatePack = TemplatePack.defaultPack
+    var useTemplate: Bool = UserDefaults.standard.object(forKey: "useTemplate") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(useTemplate, forKey: "useTemplate") }
+    }
+    var thumbnailPreview: NSImage?
+    var thumbnailError: String?
+    var templateRevision = 0   // 템플릿 파일이 바뀌면 화면 갱신용
+
     // MARK: 출력 (Phase 4)
     var renderRunning = false
     var renderProgress: Double = 0
@@ -391,6 +401,61 @@ final class AppState {
         isDirty = true
     }
 
+    // MARK: - 썸네일·템플릿
+
+    var thumbnailContent: ThumbnailContent {
+        if let t = project?.thumbnail { return t }
+        return ThumbnailRenderer.defaultContent(manuscript: project?.manuscript ?? manuscript, screen: rangeResult?.metadata)
+    }
+
+    func updateThumbnail(_ change: (inout ThumbnailContent) -> Void) {
+        guard var p = project else { return }
+        var t = thumbnailContent
+        change(&t)
+        p.thumbnail = t
+        project = p
+        isDirty = true
+        renderThumbnailPreview()
+    }
+
+    func renderThumbnailPreview() {
+        do {
+            let data = try ThumbnailRenderer.render(thumbnailContent, template: templatePack.thumbnailTemplate, background: templatePack.background)
+            thumbnailPreview = NSImage(data: data)
+            thumbnailError = nil
+        } catch {
+            thumbnailPreview = nil
+            thumbnailError = error.localizedDescription
+        }
+    }
+
+    /// 썸네일 JPG를 영상 옆에 "<영상이름>-Title.jpg"로 저장 (사용자 기존 습관과 같은 이름)
+    @discardableResult
+    func writeThumbnail(to url: URL? = nil) throws -> URL {
+        guard let video = videoURL else { throw SermonCutError.invalidArgument("영상이 없습니다.") }
+        let target = url ?? video.deletingLastPathComponent().appendingPathComponent(video.deletingPathExtension().lastPathComponent + "-Title.jpg")
+        let data = try ThumbnailRenderer.render(thumbnailContent, template: templatePack.thumbnailTemplate, background: templatePack.background)
+        try data.write(to: target, options: .atomic)
+        return target
+    }
+
+    func installTemplateFile(_ source: URL, as target: URL) {
+        do {
+            try templatePack.install(source, as: target)
+            templateRevision += 1
+            renderThumbnailPreview()
+        } catch {
+            errorMessage = "템플릿 파일을 넣지 못했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    /// 인트로/아웃트로 재료 (템플릿을 쓰고 재료가 다 있을 때만)
+    func bookends() async throws -> FCPXMLExporter.Bookends? {
+        guard useTemplate, templatePack.hasIntroOutro, templatePack.hasThumbnail else { return nil }
+        let thumb = try writeThumbnail()
+        return try await templatePack.bookends(thumbnail: thumb)
+    }
+
     // MARK: - 원고
 
     func loadManuscript(_ url: URL) {
@@ -651,14 +716,16 @@ final class AppState {
                                              projectName: video.deletingPathExtension().lastPathComponent + " (SermonCut)",
                                              audioGainDB: p.settings.audioGainDB)
         options.chapterMarkers = chapters.compactMap { c in c.sourceTime.map { ($0, "\(c.number). \(c.title)") } }
-        let xml = FCPXMLExporter().export(edl: edl, videoURL: video, options: options)
-        do {
-            try xml.write(to: url, atomically: true, encoding: .utf8)
-        } catch {
-            errorMessage = SermonCutError.fileWriteFailed(path: url.path, reason: error.localizedDescription).localizedDescription
-            return
+        Task {
+            do {
+                options.bookends = try await bookends()
+                let xml = FCPXMLExporter().export(edl: edl, videoURL: video, options: options)
+                try xml.write(to: url, atomically: true, encoding: .utf8)
+                if openInFCPAfterExport { openInFinalCut(url) }
+            } catch {
+                errorMessage = SermonCutError.fileWriteFailed(path: url.path, reason: error.localizedDescription).localizedDescription
+            }
         }
-        if openInFCPAfterExport { openInFinalCut(url) }
     }
 
     /// FCPXML을 Final Cut Pro로 연다 (설치된 FCP를 번들 ID로 찾는다)
@@ -686,6 +753,11 @@ final class AppState {
             defer { renderRunning = false }
             let started = Date()
             do {
+                // 인트로/아웃트로 (템플릿 사용 시) — 커버를 따로 안 골랐으면 썸네일을 커버로
+                if let b = try await bookends() {
+                    options.bookends = b
+                    if preset == .final, options.coverImage == nil { options.coverImage = b.thumbnail.url }
+                }
                 let duration = try await FFmpegRenderer().render(edl: edl, video: video, output: url, options: options, workDirectory: work) { v in
                     Task { @MainActor [weak self] in self?.renderProgress = v }
                 }

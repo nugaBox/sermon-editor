@@ -6,7 +6,7 @@ import SermonCutCore
 let usage = """
 사용법:
   sermoncut analyze  --video 영상 --in 시작 --out 끝 [--manuscript 원고] [--work 작업폴더] [--project 저장경로]
-  sermoncut export   --project 프로젝트.sermoncut --fcpxml 출력.fcpxml [--no-transitions] [--gain dB]
+  sermoncut export   --project 프로젝트.sermoncut --fcpxml 출력.fcpxml [--no-transitions] [--gain dB] [--with-template [--thumbnail 썸네일.jpg]]
   sermoncut evaluate --project 프로젝트.sermoncut --reference 기준.fcpxml [--gap 초]
   sermoncut realign  --project 프로젝트.sermoncut [--run 초] [--threshold 0.3]
   sermoncut transcript --project 프로젝트.sermoncut [--all]
@@ -16,7 +16,9 @@ let usage = """
   sermoncut ai-test  [--provider …] [--model …]        (연결 테스트)
   sermoncut scan     --video 영상 [--interval 6] [--transcript base전사.json] [--dump]   (설교 구간 후보)
   sermoncut chapters --project 프로젝트.sermoncut [--paste 목차.txt] [--reference 기준.fcpxml] [--intro 10.067]
-  sermoncut render   --project 프로젝트.sermoncut --out 결과.mp4 [--final] [--cover 썸네일.jpg]
+  sermoncut thumbnail [--project 프로젝트.sermoncut] [--title 제목] [--passage 본문] [--label 예배구분] --out 썸네일.jpg
+  sermoncut template-background --psd 템플릿.psd      (Photoshop으로 글자 없는 배경을 뽑아 템플릿 팩에 설치)
+  sermoncut render   --project 프로젝트.sermoncut --out 결과.mp4 [--final] [--cover 썸네일.jpg [--with-template]]
   API 키: Keychain(서비스 com.nugabox.sermoncut.apikey) 또는 환경변수 SERMONCUT_API_KEY
 
 시간은 1:22:33.4 / 22:33 / 4953.4 형식 모두 가능. 모든 시간은 원본 영상 0초 기준.
@@ -143,7 +145,7 @@ func runs(_ p: SermonProject, where include: (TranscriptSegment) -> Bool) -> [Ti
     return runs
 }
 
-func export(_ args: Args) throws {
+func export(_ args: Args) async throws {
     let project = try ProjectFile.load(fileURL(try args.require("project")))
     let out = fileURL(try args.require("fcpxml"))
     var settings = project.settings
@@ -156,6 +158,20 @@ func export(_ args: Args) throws {
     var options = FCPXMLExporter.Options(eventName: "SermonCut", projectName: video.deletingPathExtension().lastPathComponent + " (SermonCut)",
                                          audioGainDB: settings.audioGainDB)
     options.chapterMarkers = ChapterBuilder.build(project: project, edl: edl).compactMap { c in c.sourceTime.map { ($0, "\(c.number). \(c.title)") } }
+    if args.flags.contains("with-template") {
+        // 썸네일: 지정 파일, 없으면 원고 제목·본문으로 만들어 FCPXML 옆에 저장
+        let pack = TemplatePack.defaultPack
+        let thumb: URL
+        if let t = args.options["thumbnail"] {
+            thumb = fileURL(t)
+        } else {
+            thumb = out.deletingLastPathComponent().appendingPathComponent(video.deletingPathExtension().lastPathComponent + "-Title.jpg")
+            let content = ThumbnailRenderer.defaultContent(manuscript: project.manuscript, screen: nil)
+            try ThumbnailRenderer.render(content, template: pack.thumbnailTemplate, background: pack.background).write(to: thumb)
+            print("썸네일: \(thumb.path)")
+        }
+        options.bookends = try await pack.bookends(thumbnail: thumb)
+    }
     let xml = FCPXMLExporter().export(edl: edl, videoURL: video, options: options)
     do { try xml.write(to: out, atomically: true, encoding: .utf8) } catch {
         throw SermonCutError.fileWriteFailed(path: out.path, reason: error.localizedDescription)
@@ -333,6 +349,9 @@ func render(_ args: Args) async throws {
                                    media: project.media, settings: project.settings)
     var options = FFmpegRenderer.Options(preset: args.flags.contains("final") ? .final : .preview, audioGainDB: project.settings.audioGainDB)
     options.coverImage = args.options["cover"].map(fileURL)
+    if args.flags.contains("with-template"), let cover = options.coverImage {
+        options.bookends = try await TemplatePack.defaultPack.bookends(thumbnail: cover)
+    }
     let printer = ProgressPrinter()
     let started = Date()
     let duration = try await FFmpegRenderer().render(edl: edl, video: URL(fileURLWithPath: project.videoPath), output: out, options: options,
@@ -413,13 +432,45 @@ func chapters(_ args: Args) async throws {
     }
 }
 
+func thumbnail(_ args: Args) throws {
+    let pack = TemplatePack.defaultPack
+    var content = ThumbnailContent(title: "", passage: "", label: "주일낮예배 설교")
+    if let path = args.options["project"] {
+        let p = try ProjectFile.load(fileURL(path))
+        content = ThumbnailRenderer.defaultContent(manuscript: p.manuscript, screen: nil)
+    }
+    if let t = args.options["title"] { content.title = t }
+    if let t = args.options["lines"] { content.titleLines = t.components(separatedBy: "|") }
+    if let t = args.options["passage"] { content.passage = t }
+    if let t = args.options["label"] { content.label = t }
+    let out = fileURL(try args.require("out"))
+    let template = pack.thumbnailTemplate
+    let started = Date()
+    let data = try ThumbnailRenderer.render(content, template: template, background: pack.background)
+    try data.write(to: out)
+    print(String(format: "썸네일 %@ (%.2f초) 제목 줄: %@", out.path, Date().timeIntervalSince(started),
+                 try ThumbnailRenderer.titleLines(content, template: template).joined(separator: " / ")))
+}
+
+func templateBackground(_ args: Args) async throws {
+    let psd = fileURL(try args.require("psd"))
+    let pack = TemplatePack.defaultPack
+    try FileManager.default.createDirectory(at: pack.folder, withIntermediateDirectories: true)
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sermoncut-bg-\(UUID().uuidString).png")
+    let started = Date()
+    try await PhotoshopBridge.exportBackground(psd: psd, to: tmp)
+    try pack.install(tmp, as: pack.background)
+    try? FileManager.default.removeItem(at: tmp)
+    print(String(format: "배경 설치: %@ (%.0f초)", pack.background.path, Date().timeIntervalSince(started)))
+}
+
 // MARK: - 진입점
 
 let args = Args(Array(CommandLine.arguments.dropFirst()))
 do {
     switch args.command {
     case "analyze": try await analyze(args)
-    case "export": try export(args)
+    case "export": try await export(args)
     case "evaluate": try evaluate(args)
     case "realign": try realign(args)
     case "transcript": try transcript(args)
@@ -430,6 +481,8 @@ do {
     case "render": try await render(args)
     case "scan": try await scan(args)
     case "chapters": try await chapters(args)
+    case "thumbnail": try thumbnail(args)
+    case "template-background": try await templateBackground(args)
     default: print(usage)
     }
 } catch {

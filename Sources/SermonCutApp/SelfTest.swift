@@ -230,10 +230,22 @@ enum SelfTest {
         state.openProject(projURL)
         await settle(0.5)
         check(state.screen == .editor && state.project?.segments == savedSegments, "프로젝트 다시 열기 — 편집 상태 동일")
+        // 썸네일 (Phase 6)
+        state.showThumbnail = true
+        await settle(1.5)
+        capture("6b-thumbnail", o)
+        state.showThumbnail = false
+        await settle(0.5)
+        check(state.thumbnailPreview != nil, "썸네일 미리보기 (\(state.thumbnailContent.title))")
         let xmlURL = o.output.appendingPathComponent("selftest.fcpxml")
         state.exportFCPXML(to: xmlURL)
+        check(await wait("FCPXML", timeout: 60) { FileManager.default.fileExists(atPath: xmlURL.path) }, "FCPXML 파일 생성")
         let xml = (try? String(contentsOf: xmlURL, encoding: .utf8)) ?? ""
-        check(xml.contains("<fcpxml version=\"1.14\">") && xml.contains("<asset-clip"), "FCPXML 내보내기 (\(xml.count)자, 클립 \(xml.components(separatedBy: "<asset-clip").count - 1)개)")
+        check(xml.contains("<fcpxml version=\"1.14\">") && xml.contains("<asset-clip"), "FCPXML 내보내기 (\(xml.count)자, 클립 \(xml.components(separatedBy: "<asset-clip ref=\"r2\"").count - 1)개)")
+        if state.useTemplate && state.templatePack.hasIntroOutro {
+            check(xml.contains("<video ref=\"r7\"") && xml.contains("<video ref=\"r9\"") && xml.contains("색상으로 페이드"),
+                  "인트로(썸네일+음악)·아웃트로(끝 화면+음악) 포함")
+        }
         await settle(1.0)
         capture("6-editor-reopened", o)
 
@@ -256,7 +268,7 @@ enum SelfTest {
         log.append(String(format: "\n결과: 실패 %d건, 소요 %.0f초", failures, Date().timeIntervalSince(started)))
         try? log.joined(separator: "\n").write(to: o.output.appendingPathComponent("selftest.log"), atomically: true, encoding: .utf8)
         print(log.last ?? "")
-        NSApp.terminate(nil)
+        // NSApp.terminate는 저장 확인 창을 띄울 수 있으므로 점검 모드에서는 바로 끝낸다
         exit(failures == 0 ? 0 : 1)
     }
 
