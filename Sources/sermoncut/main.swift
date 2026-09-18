@@ -14,6 +14,7 @@ let usage = """
   sermoncut waveform --video 영상          (파형 생성 시간 측정, 캐시 없이)
   sermoncut ai       --project 프로젝트.sermoncut [--provider deepseek|claude|openai-compatible] [--model 이름] [--base-url URL] [--yes]
   sermoncut ai-test  [--provider …] [--model …]        (연결 테스트)
+  sermoncut render   --project 프로젝트.sermoncut --out 결과.mp4 [--final] [--cover 썸네일.jpg]
   API 키: Keychain(서비스 com.nugabox.sermoncut.apikey) 또는 환경변수 SERMONCUT_API_KEY
 
 시간은 1:22:33.4 / 22:33 / 4953.4 형식 모두 가능. 모든 시간은 원본 영상 0초 기준.
@@ -323,6 +324,22 @@ func ai(_ args: Args) async throws {
     printSummary(project)
 }
 
+func render(_ args: Args) async throws {
+    let project = try ProjectFile.load(fileURL(try args.require("project")))
+    let out = fileURL(try args.require("out"))
+    let edl = try EDLBuilder.build(segments: project.segments, silences: project.silences, sourceRange: project.sourceRange,
+                                   media: project.media, settings: project.settings)
+    var options = FFmpegRenderer.Options(preset: args.flags.contains("final") ? .final : .preview, audioGainDB: project.settings.audioGainDB)
+    options.coverImage = args.options["cover"].map(fileURL)
+    let printer = ProgressPrinter()
+    let started = Date()
+    let duration = try await FFmpegRenderer().render(edl: edl, video: URL(fileURLWithPath: project.videoPath), output: out, options: options,
+                                                     workDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("sermoncut-render")) { p in
+        printer.report(.extractAudio, p)
+    }
+    print(String(format: "렌더 완료 %.0f초: %@ (예상 길이 %@)", Date().timeIntervalSince(started), out.path, Timecode.format(duration)))
+}
+
 // MARK: - 진입점
 
 let args = Args(Array(CommandLine.arguments.dropFirst()))
@@ -337,6 +354,7 @@ do {
     case "waveform": try await waveform(args)
     case "ai": try await ai(args)
     case "ai-test": try await aiTest(args)
+    case "render": try await render(args)
     default: print(usage)
     }
 } catch {

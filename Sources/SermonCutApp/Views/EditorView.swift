@@ -1,3 +1,4 @@
+import AppKit
 import SermonCutCore
 import SwiftUI
 
@@ -45,6 +46,13 @@ struct EditorView: View {
             if let e = state.pendingAIEstimate {
                 Text("탈선 후보 \(e.calls)곳을 \(state.aiConfig.kind.displayName)(\(state.aiConfig.model))로 판정합니다.\n예상 약 \(e.totalTokens.formatted()) 토큰 (입력 \(e.promptTokens.formatted()) · 출력 \(e.completionTokens.formatted())), 호출 \(e.calls)회.\n결과는 제안이며 직접 바꾼 항목은 건드리지 않습니다.")
             }
+        }
+        .alert("렌더", isPresented: Binding(get: { state.renderMessage != nil }, set: { if !$0 { state.renderMessage = nil } })) {
+            Button("열기") { if let u = state.lastRenderURL { NSWorkspace.shared.open(u) }; state.renderMessage = nil }
+            Button("Finder에서 보기") { if let u = state.lastRenderURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }; state.renderMessage = nil }
+            Button("닫기", role: .cancel) { state.renderMessage = nil }
+        } message: {
+            Text(state.renderMessage ?? "")
         }
         .alert("AI 판정", isPresented: Binding(get: { state.aiMessage != nil }, set: { if !$0 { state.aiMessage = nil } })) {
             Button("확인") { state.aiMessage = nil }
@@ -201,11 +209,24 @@ struct EditorView: View {
                         Button("실패 재시도 (\(state.failedCandidateIDs.count))") { state.runAIJudgement(only: state.failedCandidateIDs) }
                     }
                 }
+                Toggle("내보낸 뒤 FCP로 열기", isOn: Binding(get: { state.openInFCPAfterExport }, set: { state.openInFCPAfterExport = $0 }))
+                    .toggleStyle(.checkbox)
                 Button("FCPXML 내보내기…") { FilePanels.exportFCPXML(state) }
                     .disabled(state.edl == nil)
-                Button("프리뷰 렌더") {}
-                    .disabled(true)
-                    .help("Phase 4에서 추가됩니다")
+                if state.renderRunning {
+                    ProgressView(value: state.renderProgress) {
+                        Text("\(state.renderPreset == .preview ? "프리뷰" : "최종") 렌더 \(Int(state.renderProgress * 100))%").font(.caption)
+                    }
+                    .frame(width: 140)
+                    Button("중지") { state.cancelRender() }
+                } else {
+                    Menu("렌더") {
+                        Button("프리뷰 (960x540, 빠름)") { FilePanels.render(state, preset: .preview) }
+                        Button("최종 MP4 (1080p, H.264 5Mbps)") { FilePanels.render(state, preset: .final) }
+                    }
+                    .fixedSize()
+                    .disabled(state.edl == nil)
+                }
             }
         }
         .padding(10)

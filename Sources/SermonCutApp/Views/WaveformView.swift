@@ -125,9 +125,12 @@ struct TimelineStripView: View {
                 // 편집점(클립 경계)
                 if let edl = state.edl {
                     let snap = FrameSnapper(media: edl.media)
-                    for c in edl.clips {
+                    for (i, c) in edl.clips.enumerated() {
                         let a = x(snap.seconds(c.sourceStartFrame))
-                        ctx.fill(Path(CGRect(x: a, y: 0, width: 1, height: size.height)), with: .color(.black.opacity(0.5)))
+                        // 핸들 부족(하드컷 폴백) 편집점은 주황색으로 (SPEC §6.2)
+                        let short = i > 0 && edl.transitions.first { $0.afterClip == i - 1 }?.handleShortage == true
+                        ctx.fill(Path(CGRect(x: a - (short ? 1 : 0), y: 0, width: short ? 3 : 1, height: size.height)),
+                                 with: .color(short ? .orange : .black.opacity(0.5)))
                     }
                 }
                 for m in ChapterMarkers.fromManuscript(p) {

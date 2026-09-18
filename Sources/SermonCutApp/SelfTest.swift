@@ -15,6 +15,7 @@ enum SelfTest {
         var inPoint: Double = 2162
         var outPoint: Double = 4950
         var ai = false
+        var render = false
     }
 
     static func options() -> Options? {
@@ -27,6 +28,7 @@ enum SelfTest {
         if let i = value("--in").flatMap(Timecode.parse) { o.inPoint = i }
         if let x = value("--out").flatMap(Timecode.parse) { o.outPoint = x }
         o.ai = a.contains("--ai")
+        o.render = a.contains("--render")
         return o
     }
 
@@ -197,6 +199,17 @@ enum SelfTest {
         check(xml.contains("<fcpxml version=\"1.14\">") && xml.contains("<asset-clip"), "FCPXML 내보내기 (\(xml.count)자, 클립 \(xml.components(separatedBy: "<asset-clip").count - 1)개)")
         await settle(1.0)
         capture("6-editor-reopened", o)
+
+        // 7. 프리뷰 렌더 (--render 일 때만) — 결과 길이가 EDL과 같아야 한다
+        if o.render, let edl = state.edl {
+            let mp4 = o.output.appendingPathComponent("selftest-preview.mp4")
+            state.render(preset: .preview, to: mp4)
+            check(await wait("렌더", timeout: 900) { !state.renderRunning }, "프리뷰 렌더 완료")
+            let expected = FrameSnapper(media: edl.media).seconds(edl.totalFrames)
+            let probed = (try? await MediaProbe().probe(mp4))?.durationSeconds ?? -1
+            check(abs(probed - expected) < 0.1, String(format: "렌더 길이 %.3f초 = EDL %.3f초", probed, expected))
+            state.renderMessage = nil
+        }
 
         finish(log, failures, o, started)
     }

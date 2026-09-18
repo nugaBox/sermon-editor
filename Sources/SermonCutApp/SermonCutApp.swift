@@ -40,6 +40,10 @@ struct SermonCutApp: App {
                 Divider()
                 Button("FCPXML 내보내기…") { if state.edl != nil { FilePanels.exportFCPXML(state) } }
                     .keyboardShortcut("e")
+                Button("프리뷰 렌더…") { if state.edl != nil { FilePanels.render(state, preset: .preview) } }
+                    .keyboardShortcut("r")
+                Button("최종 MP4 렌더…") { if state.edl != nil { FilePanels.render(state, preset: .final) } }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("실행 취소") { state.undo() }
@@ -137,6 +141,29 @@ enum FilePanels {
         panel.directoryURL = state.videoURL?.deletingLastPathComponent()
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         return state.save(to: url)
+    }
+
+    static func render(_ state: AppState, preset: FFmpegRenderer.Preset) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.mpeg4Movie]
+        let base = state.videoURL?.deletingPathExtension().lastPathComponent ?? "설교"
+        panel.nameFieldStringValue = base + (preset == .preview ? " (프리뷰).mp4" : " (SermonCut).mp4")
+        panel.directoryURL = state.videoURL?.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var cover: URL?
+        if preset == .final {
+            let alert = NSAlert()
+            alert.messageText = "커버 이미지(썸네일)를 넣을까요?"
+            alert.informativeText = "유튜브 업로드용 mp4에 썸네일을 커버로 첨부합니다."
+            alert.addButton(withTitle: "이미지 선택…")
+            alert.addButton(withTitle: "넣지 않음")
+            if alert.runModal() == .alertFirstButtonReturn {
+                let open = NSOpenPanel()
+                open.allowedContentTypes = [.jpeg, .png]
+                if open.runModal() == .OK { cover = open.url }
+            }
+        }
+        state.render(preset: preset, to: url, cover: cover)
     }
 
     static func exportFCPXML(_ state: AppState) {

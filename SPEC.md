@@ -737,10 +737,11 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] 09/13 검증: 수작업 대비 정밀도 69% → 98%
 - 태그: `v0.3-phase3`
 
-### Phase 4 — 출력 완성
-- [ ] `FFmpegRenderer` (프리뷰, 진행률, 취소)
-- [ ] FCPXML 내보내기 후 FCP 자동 실행 옵션
-- [ ] 핸들 부족 경고 UI
+### Phase 4 — 출력 완성 ✅ (결과: `docs/phase4-report.md`)
+- [x] `FFmpegRenderer` (프리뷰, 진행률, 취소) — FCP와 같은 핸들 방식이라 결과 길이 = FCPXML 길이
+- [x] 최종 MP4: Compressor "MP4 5,000kbps"와 같게 (H.264 Main 5Mbps CBR, AAC 128k, 썸네일 커버)
+- [x] FCPXML 내보내기 후 FCP 자동 실행 옵션
+- [x] 핸들 부족 경고 UI (상태 줄 + 타임라인 주황 편집점)
 - 태그: `v0.4-phase4`
 
 ### Phase 5 — 구간 자동 찾기

@@ -67,6 +67,17 @@ final class AppState {
 
     struct SegmentState: Equatable { var isRemoved: Bool; var userOverridden: Bool }
 
+    // MARK: 출력 (Phase 4)
+    var renderRunning = false
+    var renderProgress: Double = 0
+    var renderPreset: FFmpegRenderer.Preset = .preview
+    var renderMessage: String?
+    var lastRenderURL: URL?
+    var openInFCPAfterExport: Bool = UserDefaults.standard.bool(forKey: "openInFCPAfterExport") {
+        didSet { UserDefaults.standard.set(openInFCPAfterExport, forKey: "openInFCPAfterExport") }
+    }
+    @ObservationIgnored private var renderTask: Task<Void, Never>?
+
     // MARK: AI
     var aiConfig: AIConfig = AppState.loadAIConfig()
     var aiRunning = false
@@ -506,6 +517,48 @@ final class AppState {
             try xml.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             errorMessage = SermonCutError.fileWriteFailed(path: url.path, reason: error.localizedDescription).localizedDescription
+            return
+        }
+        if openInFCPAfterExport { openInFinalCut(url) }
+    }
+
+    /// FCPXML을 Final Cut Pro로 연다 (설치된 FCP를 번들 ID로 찾는다)
+    func openInFinalCut(_ url: URL) {
+        let ids = ["com.apple.FinalCutApp", "com.apple.FinalCut"]
+        guard let app = ids.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first else {
+            errorMessage = "Final Cut Pro를 찾을 수 없습니다."
+            return
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    // MARK: - 렌더 (SPEC §6.5)
+
+    func render(preset: FFmpegRenderer.Preset, to url: URL, cover: URL? = nil) {
+        guard let p = project, let edl, !renderRunning else { return }
+        renderRunning = true
+        renderPreset = preset
+        renderProgress = 0
+        var options = FFmpegRenderer.Options(preset: preset, audioGainDB: p.settings.audioGainDB)
+        options.coverImage = cover
+        let video = URL(fileURLWithPath: p.videoPath)
+        let work = Self.cacheRoot.appendingPathComponent("render")
+        renderTask = Task {
+            defer { renderRunning = false }
+            let started = Date()
+            do {
+                let duration = try await FFmpegRenderer().render(edl: edl, video: video, output: url, options: options, workDirectory: work) { v in
+                    Task { @MainActor [weak self] in self?.renderProgress = v }
+                }
+                lastRenderURL = url
+                renderMessage = String(format: "%@ 완료 (%@, %.0f초 걸림)\n%@", preset == .preview ? "프리뷰 렌더" : "최종 MP4",
+                                       Timecode.format(duration, millis: false), Date().timeIntervalSince(started), url.lastPathComponent)
+            } catch {
+                try? FileManager.default.removeItem(at: url)
+                if (error as? SermonCutError) != .cancelled { errorMessage = error.localizedDescription }
+            }
         }
     }
+
+    func cancelRender() { renderTask?.cancel() }
 }
