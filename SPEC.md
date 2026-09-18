@@ -245,6 +245,7 @@ struct ExportSettings: Codable {
     var silenceThresholdDB: Double = -35
     var minSilenceDuration: Double = 0.3
     var fallbackToHardCut: Bool = true      // 핸들 부족 시
+    var audioGainDB: Double = 12            // Phase 0 실측: 매주 +12dB 적용
 }
 ```
 
@@ -454,7 +455,10 @@ Final Cut의 Cross Dissolve와 ffmpeg의 `xfade`는 **둘 다 편집점 양쪽�
       else: transitionDuration을 availableHeadHandle * 0.8로 축소
 ```
 
-또한 결과물 총 길이는 `클립 길이 합계 − (클립수 − 1) × transitionDuration`이 된다. UI의 "예상 최종 길이"는 이 공식으로 계산할 것.
+결과물 총 길이:
+- **FCPXML**: 트랜지션은 핸들을 끌어 쓰므로 길이가 줄지 않는다 → `클립 길이 합계` (Phase 0 실측, `docs/fcpxml-reference.md` §5)
+- **ffmpeg xfade 렌더**: `클립 길이 합계 − (클립수 − 1) × transitionDuration`
+UI의 "예상 최종 길이"는 FCPXML 기준으로 표시한다.
 
 ### 6.3 프레임 스냅
 
@@ -508,6 +512,48 @@ ffmpeg -i input.mov \
 - `xfade`는 두 입력의 해상도·픽셀포맷·프레임레이트·타임베이스가 **완전히 동일**해야 동작하므로, 각 trim 뒤에 `fps`, `format`, `settb=AVTB`를 반드시 붙인다
 - 세그먼트가 40~50개면 filter_complex가 매우 길어지므로 **파일로 써서 `-filter_complex_script`로 전달**한다 (명령행 길이 제한 회피)
 - 진행률은 `-progress pipe:1` 출력을 파싱해 UI에 표시
+
+### 6.6 설교 목차 (유튜브 챕터) 자동 생성  ★ Phase 0 이후 추가 요구
+
+사용자는 매주 완성본을 들으며 대지(소제목) 시작 시간을 손으로 따서 유튜브 설명란에 넣는다.
+
+```
+03:45 1. 위기의 순간 드러나는 참신앙
+18:15 2."죽으면 죽으리이다"의 각오로
+28:14 3. 죽기를 각오한 기도
+31:06 4. 죽고자 하면 사는 역설의 신앙
+```
+
+이 목록을 앱이 **제안**하고 사용자가 확인·수정 후 복사한다. 시간은 **출력 타임라인 기준**(인트로 10초 포함)이다.
+
+#### 신호원 (확신도 높은 순, 결과를 교차 검증)
+1. **원고 소제목 + 정렬** — hwpx의 `** 소제목` 문단이 곧 목차 제목이다(실측: 글자까지 동일). 각 소제목 **바로 다음 원고 문장**이 매칭된 전사 세그먼트의 시작 시간 = 대지 시작(원본 기준).
+2. **화면 목차 오버레이 (OBS)** — 녹화 원본 우하단에 목차 박스가 있고 현재 대지가 흰색, 나머지가 회색이다. 1초 간격 프레임을 `Vision`(`VNRecognizeTextRequest`, 한국어)으로 읽어 **강조 줄이 바뀌는 시점**과 제목 텍스트를 얻는다. 원고가 없어도 동작한다. 영역 좌표는 설정값(기본 x1320 y540 w600 h340 @1080p).
+3. **AI 제안** — 원고도 오버레이도 없을 때만. 전사문을 주고 대지 구분 후보를 받는다.
+
+#### 원본 시간 → 출력 시간 변환
+최종 EDL(6.1 결과)로 매핑: 원본 시간 t가 킵 구간 i 안에 있으면 `출력 = introDuration + offset_i + (t − start_i)`. 삭제 구간 안에 떨어지면 **다음 킵 구간 시작**으로 민다. 편집점 ±1초 이내면 편집점에 붙이고, 아니면 초 단위 내림.
+
+#### 출력 형식
+- `MM:SS 번호. 제목` (1시간 이상이면 `H:MM:SS`)
+- 유튜브 챕터는 **첫 항목이 00:00**이어야 활성화된다 → 옵션으로 `00:00 성경 봉독`(또는 사용자가 정한 문구) 자동 삽입 체크박스 제공
+- FCPXML에도 같은 위치에 `<chapter-marker>`를 넣는 옵션 (FCP 공유 시 챕터 유지)
+- UI: 에디터 우측에 "목차" 탭 — 각 항목 클릭 시 해당 위치 재생, 시간 ±1초 미세조정, [복사] 버튼
+
+### 6.7 썸네일 자동 생성  ★ Phase 0 이후 추가 요구
+
+템플릿: `2026-주일낮예배 설교-Title.psd` (2560×1440, Photoshop 2022). 텍스트 레이어:
+- `제목` 그룹 안 `제목 1줄` / `제목 2줄` (둘 중 하나만 표시)
+- `강해내용 | 설교본문` — 예: `에스더 4장 1~17절`
+- 예배 구분 레이어들 (`주일낮예배 설교`, `특별예배 설교 / 부활절` 등 — 표시 여부로 선택)
+- 글꼴: SF함박눈(제목), Pretendard (시스템에 설치됨)
+
+제목·본문은 **hwpx 원고의 `제  목 :` / `본  문 :` 줄에서 자동으로 채운다** (시리즈 번호 `(7)`은 제거, 사용자 수정 가능).
+
+구현 방식 (Phase 6에서 결정):
+- **A안 (권장, 원본과 100% 동일)**: 설치된 Photoshop을 AppleScript `do javascript`로 구동 → PSD 열기 → 텍스트 교체, 1줄/2줄 그룹 토글 → JPG 2560×1440 저장 → 닫기(원본 PSD 저장 안 함). 외부 프로세스 실행이므로 `ProcessRunner`(`osascript`) 경유.
+- **B안 (Photoshop 없이)**: PSD에서 배경(텍스트 제외 합성본)을 1회 PNG로 뽑아 두고, CoreText로 같은 글꼴·위치에 글자를 그린다. 레이어 효과(그림자 등) 재현 정도는 확인 필요.
+- 제목 줄바꿈(1줄/2줄)은 글자 폭을 재서 자동 결정하되 사용자가 바꿀 수 있게 한다.
 
 ---
 
@@ -624,15 +670,15 @@ ffmpeg -i input.mov \
 ## 9. 구현 단계
 
 ### Phase 0 — 검증 (다른 것보다 먼저)
-- [ ] Final Cut Pro에서 "클립 3개 + Cross Dissolve 2개" 샘플 프로젝트를 만들고 FCPXML 내보내기
-- [ ] 그 XML의 시간값을 손으로 수정 → 다시 임포트 → 의도대로 반영되는지 확인
-- [ ] 결과를 `docs/fcpxml-reference.md`로 정리 (effect uid, timescale, transition 위치 규칙)
+- [x] ~~샘플 프로젝트~~ → 실제 09/13 완성 편집본(클립 6개 + 디졸브 5개 + 인트로/아웃트로) FCPXML 1.14로 대체
+- [ ] 생성한 XML(`samples/fcpxml/roundtrip-test.fcpxml`) 임포트 → 의도대로 반영되는지 확인
+- [x] 결과를 `docs/fcpxml-reference.md`로 정리 (effect uid, timescale, transition 위치 규칙)
 - [ ] 여기서 막히면 진행 중단하고 보고
 
 ### Phase 0b — hwpx 구조 분석
-- [ ] 사용자에게 실제 설교 원고 hwpx 파일을 요청
-- [ ] `unzip`으로 해제해 내부 구조 확인 (6.0b절 명령 참고)
-- [ ] `docs/hwpx-structure.md` 작성 — 실제 요소명/네임스페이스 기록
+- [x] 사용자에게 실제 설교 원고 hwpx 파일을 요청
+- [x] `unzip`으로 해제해 내부 구조 확인 (6.0b절 명령 참고)
+- [x] `docs/hwpx-structure.md` 작성 — 실제 요소명/네임스페이스 기록
 - [ ] Phase 0과 병행 가능
 
 ### Phase 1 — CLI 프로토타입
@@ -678,10 +724,22 @@ ffmpeg -i input.mov \
 - [ ] 파형 위 후보 마커 표시
 - 태그: `v0.5-phase5`
 
-### Phase 6 — (추후) 인트로/아웃트로/BGM
+### Phase 5b — 설교 목차 (6.6절)
+- [ ] `ChapterBuilder` — 원고 소제목 + 정렬 결과 → 원본 시간
+- [ ] `OverlayChapterDetector` — Vision OCR로 화면 목차 강조 변화 검출
+- [ ] EDL 기반 원본→출력 시간 변환 + 편집점 스냅
+- [ ] 목차 탭 UI, 복사, FCPXML `chapter-marker` 옵션
+- **검증**: 09/13 영상으로 사용자 수작업 목차(03:45 / 18:15 / 28:14 / 31:06)와 ±1초 일치
+
+### Phase 6 — 인트로/아웃트로/썸네일
+실제 구조(Phase 0 실측, `docs/fcpxml-reference.md` §3):
+- 인트로: 썸네일 jpg 10.067초 + 연결 오디오 `갓피플NCB-ToTheLord-10s.mp3`, 맨 앞 교차 디졸브(페이드인), 설교 첫 클립과 **색상으로 페이드** 2.467초
+- 아웃트로: 마지막 설교 클립 끝부분에 연결 오디오 `갓피플NCB-Hope-15s.mp3`, **색상으로 페이드** 1.6초 → `end-poster-YYYY.jpg` 14.7초 → 끝 교차 디졸브(페이드아웃)
+- 설교 오디오 **+12dB** (`ExportSettings.audioGainDB`)
 - 데이터 모델에 `headClip`, `tailClip`, `bgmTrack` 필드를 **Phase 1부터 미리 넣어둔다** (값은 nil 허용).
-- FCPXML에서 BGM은 `lane="-1"` connected clip으로, 인트로/아웃트로는 spine 앞뒤 `asset-clip`으로 처리.
-- 매주 동일한 파일이므로 설정에 "템플릿 경로"로 등록해두고 자동 삽입.
+- 에셋(mp3, end-poster)은 설정에 "템플릿 폴더"로 등록. end-poster는 매년 바뀌므로 파일 선택 가능하게.
+- [ ] 썸네일 자동 생성 (6.7절)
+- [ ] 최종 mp4 렌더 옵션: Compressor 설정과 동일하게 H.264 Main 5,000kbps / AAC 128k / 썸네일 커버 첨부 (`docs/fcpxml-reference.md` §8)
 
 ---
 
