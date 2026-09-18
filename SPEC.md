@@ -690,7 +690,7 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 
 ### Phase 0 — 검증 (다른 것보다 먼저)
 - [x] ~~샘플 프로젝트~~ → 실제 09/13 완성 편집본(클립 6개 + 디졸브 5개 + 인트로/아웃트로) FCPXML 1.14로 대체
-- [ ] 생성한 XML(`samples/fcpxml/roundtrip-test.fcpxml`) 임포트 → 의도대로 반영되는지 확인
+- [x] 생성한 XML(`samples/fcpxml/roundtrip-test.fcpxml`) 임포트 → 의도대로 반영되는지 확인
 - [x] 결과를 `docs/fcpxml-reference.md`로 정리 (effect uid, timescale, transition 위치 규칙)
 - [ ] 여기서 막히면 진행 중단하고 보고
 
