@@ -1,0 +1,39 @@
+# 비밀값
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+*.xcuserdatad/
+xcuserdata/
+*.xcscmblueprint
+*.moved-aside
+.swiftpm/
+.build/
+
+# SermonCut 프로젝트 파일 (샘플/작업본)
+*.sermoncut
+
+# 대용량 미디어
+*.mov
+*.mp4
+*.m4v
+*.mxf
+*.wav
+*.m4a
+*.mp3
+*.aac
+
+# whisper 모델
+*.bin
+models/
+
+# 번들 바이너리 (로컬 배치용, 저장소에 넣지 않음)
+SermonCut/Resources/bin/
+
+# 샘플 원고 (개인 문서 — 필요 시 명시적으로 추가)
+samples/
