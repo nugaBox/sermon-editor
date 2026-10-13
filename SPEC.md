@@ -249,7 +249,7 @@ struct ExportSettings: Codable {
     var silenceThresholdDB: Double = -35
     var minSilenceDuration: Double = 0.3
     var fallbackToHardCut: Bool = true      // 핸들 부족 시
-    var audioGainDB: Double = 12            // Phase 0 실측: 매주 +12dB 적용
+    var audioGainDB: Double = 9             // Phase 0 실측 +12dB → 2026-10-11부터 +9dB (docs/phase7-report.md)
 }
 ```
 
@@ -434,9 +434,11 @@ xmllint --format /tmp/hwpx_dump/Contents/section0.xml | head -100
 ```
 1. isRemoved == false 인 세그먼트만 추출
 2. 인접(간격 < 0.5초)한 세그먼트끼리 병합 → keepRanges
-3. 각 range에 패딩 적용: start -= padHead, end += padTail
-4. snapToSilence가 켜져 있으면:
-     각 경계를 ±1.0초 내 가장 가까운 무음 구간 중앙으로 이동
+3~4. snapToSilence가 켜져 있으면 편집점을 말소리 사이 무음 안에 둔다 (docs/phase7-report.md):
+     start = (실제 말 시작 = 경계 무음 끝) − 디졸브 절반, 그 무음 시작보다 앞으로는 안 감
+     end   = (실제 말 끝 = 경계 무음 시작) + 디졸브 절반 + 0.1초, 그 무음 끝을 넘지 않음
+   경계 무음을 못 찾으면: 패딩(start -= padHead, end += padTail) 후
+     ±1.0초 내 가장 가까운 무음 구간 중앙으로 이동
 5. ★ sourceRange 밖으로 벗어나지 않게 클램프
      첫 range.start = max(start, sourceRange.start)
      마지막 range.end = min(end, sourceRange.end)
@@ -766,7 +768,7 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 실제 구조(Phase 0 실측, `docs/fcpxml-reference.md` §3):
 - 인트로: 썸네일 jpg 10.067초 + 연결 오디오 `갓피플NCB-ToTheLord-10s.mp3`, 맨 앞 교차 디졸브(페이드인), 설교 첫 클립과 **색상으로 페이드** 2.467초
 - 아웃트로: 마지막 설교 클립 끝부분에 연결 오디오 `갓피플NCB-Hope-15s.mp3`, **색상으로 페이드** 1.6초 → `end-poster-YYYY.jpg` 14.7초 → 끝 교차 디졸브(페이드아웃)
-- 설교 오디오 **+12dB** (`ExportSettings.audioGainDB`)
+- 설교 오디오 **+9dB** (`ExportSettings.audioGainDB`, 2026-10-11에 +12dB에서 바꿈)
 - 데이터 모델에 `headClip`, `tailClip`, `bgmTrack` 필드를 **Phase 1부터 미리 넣어둔다** (값은 nil 허용).
 - 에셋(mp3, end-poster)은 설정에 "템플릿 폴더"로 등록. end-poster는 매년 바뀌므로 파일 선택 가능하게.
 - [x] 템플릿 팩(`~/Library/Application Support/SermonCut/templates/sunday`) + 재료 교체 UI

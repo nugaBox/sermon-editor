@@ -99,21 +99,30 @@ public enum EDLBuilder {
             breakBefore = false
         }
 
-        // 3. 패딩
+        // 3~4. 경계: 편집점 쪽 무음을 찾으면 그 안에 둔다 (SpeechBoundary, docs/phase7-report.md).
+        //      못 찾으면 패딩 후 ±snapWindow 안의 가장 가까운 무음 중앙으로 — 시작은 말소리 시작 이전,
+        //      끝은 말소리 끝 이후의 무음만 본다.
+        let byID = Dictionary(ordered.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let lead = SpeechBoundary.lead(settings), tail = SpeechBoundary.tail(settings)
         for i in ranges.indices {
-            ranges[i].start -= settings.padHead
-            ranges[i].end += settings.padTail
-        }
-
-        // 4. 무음 스냅: 경계를 ±snapWindow 안의 가장 가까운 무음 중앙으로.
-        //    말소리를 자르지 않도록 시작은 말소리 시작 이전, 끝은 말소리 끝 이후의 무음만 본다.
-        if settings.snapToSilence && !silences.isEmpty {
-            for i in ranges.indices {
-                let r = ranges[i]
-                if let c = nearestSilenceCenter(to: r.start, in: silences, window: settings.snapWindow, where: { $0 <= r.speechStart + 0.05 }) {
+            let r = ranges[i]
+            let useSilence = settings.snapToSilence && !silences.isEmpty
+            let firstText = r.ids.first.flatMap { byID[$0]?.text } ?? ""
+            if useSilence, let s = SpeechBoundary.start(speechStart: r.speechStart, firstText: firstText, silences: silences, lead: lead) {
+                ranges[i].start = s
+            } else {
+                ranges[i].start -= settings.padHead
+                if useSilence, let c = nearestSilenceCenter(to: ranges[i].start, in: silences, window: settings.snapWindow,
+                                                            where: { $0 <= r.speechStart + 0.05 }) {
                     ranges[i].start = c
                 }
-                if let c = nearestSilenceCenter(to: r.end, in: silences, window: settings.snapWindow, where: { $0 >= r.speechEnd - 0.05 }) {
+            }
+            if useSilence, let e = SpeechBoundary.end(speechEnd: r.speechEnd, silences: silences, tail: tail) {
+                ranges[i].end = e
+            } else {
+                ranges[i].end += settings.padTail
+                if useSilence, let c = nearestSilenceCenter(to: ranges[i].end, in: silences, window: settings.snapWindow,
+                                                            where: { $0 >= r.speechEnd - 0.05 }) {
                     ranges[i].end = c
                 }
             }
@@ -179,6 +188,42 @@ public enum EDLBuilder {
             }
         }
         return best
+    }
+}
+
+/// 편집점을 말소리 사이 무음 안에 두는 규칙 — 2026-10-11 사용자 완성본의 컷 16곳이 모두 무음 안이었다.
+/// whisper 세그먼트 시간은 실제 말소리보다 시작이 이르고(최대 3초) 끝이 늦어서, 그대로 쓰면
+/// 잘라낸 쪽 말이 1~3초씩 딸려 들어온다. 무음 구간(silencedetect)으로 실제 말 시작·끝을 잡는다.
+/// - In: 말 시작(무음 끝) − 디졸브 절반. 디졸브 앞 절반이 무음 위에 놓여 말이 온전한 크기로 시작한다 (실측 0.25~0.89초, 중앙 0.5초)
+/// - Out: 말 끝(무음 시작) + 디졸브 절반 + 0.1초 (실측 0.34~0.96초, 중앙 0.63초)
+/// - 둘 다 그 무음 밖으로는 나가지 않는다 (잘라낸 쪽 말소리를 넣지 않도록)
+enum SpeechBoundary {
+    static func lead(_ s: ExportSettings) -> Double { max(s.padHead, s.transitionDuration / 2) }
+    static func tail(_ s: ExportSettings) -> Double { max(s.padTail, s.transitionDuration / 2 + 0.1) }
+
+    /// 유지 구간 시작. whisper 시작이 무음 안이거나 0.5초 안에 긴 무음(0.8초+)이 시작되면, 실제 말은 그 무음 끝에서 시작한다.
+    /// (짧은 무음은 말 사이 숨 고르기일 수 있어 건너뛰지 않는다)
+    /// 첫 세그먼트가 "아멘 …"으로 시작하면 아멘은 앞 기도의 끝이므로 그 뒤 무음까지 건너뛴다.
+    static func start(speechStart s: Double, firstText: String, silences: [TimeRange], lead: Double) -> Double? {
+        let text = firstText.trimmingCharacters(in: .whitespaces)
+        var gate: TimeRange?
+        if text.hasPrefix("아멘"), text.count > 3 {
+            gate = silences.first { $0.start >= s + 0.2 && $0.start <= s + 2.5 && $0.duration >= 0.3 }
+        }
+        if gate == nil {
+            gate = silences.first { $0.start <= s && $0.end >= s - 0.1 }
+                ?? silences.filter { $0.start > s && $0.start <= s + 0.5 && $0.duration >= 0.8 }.min { $0.start < $1.start }
+        }
+        guard let g = gate else { return nil }
+        return max(g.end - lead, g.start)
+    }
+
+    /// 유지 구간 끝. whisper 끝이 무음 안이면 그 무음 시작이 실제 말 끝, 아니면 0.5초 안에 시작하는 무음.
+    static func end(speechEnd e: Double, silences: [TimeRange], tail: Double) -> Double? {
+        let gate = silences.first { $0.start <= e && $0.end >= e }
+            ?? silences.filter { $0.start > e && $0.start <= e + 0.5 }.min { $0.start < $1.start }
+        guard let g = gate else { return nil }
+        return min(g.start + tail, g.end)
     }
 }
 

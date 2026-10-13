@@ -88,8 +88,59 @@ final class EditTests: XCTestCase {
                         TimeRange(start: 110.2, end: 110.8),   // 끝 경계 후보 (중앙 110.5)
                         TimeRange(start: 129.2, end: 129.6)]   // 시작 경계 후보 (중앙 129.4)
         let edl = try EDLBuilder.build(segments: segs, silences: silences, sourceRange: TimeRange(start: 0, end: 500), media: media30, settings: s)
-        XCTAssertEqual(edl.clips[0].sourceEndFrame, 3315)   // 110.5s
+        // 끝: 말 끝 직후 무음 → 무음 시작 + 0.6초, 단 무음 끝(110.8)을 넘지 않음
+        XCTAssertEqual(edl.clips[0].sourceEndFrame, 3324)   // 110.8s
+        // 시작: 말 시작 쪽 무음을 못 찾음 → 패딩 후 가장 가까운 무음 중앙
         XCTAssertEqual(edl.clips[1].sourceStartFrame, 3882)  // 129.4s
+    }
+
+    // MARK: 편집점 무음 규칙 (2026-10-11 사용자 완성본 실측, docs/phase7-report.md)
+
+    func testInWaitsForRealSpeechOnsetInsideSilence() throws {
+        // whisper는 1:13:36.17에 시작한다고 하지만 36.42~39.37이 무음 → 실제 말은 39.37에서. 사용자 In 38.83
+        let segs = [seg("T1", 4400, 4415.02, removed: true), seg("T2", 4415.02, 4416.17, removed: true), seg("T3", 4416.17, 4421.26)]
+        let silences = [TimeRange(start: 4416.42, end: 4419.37), TimeRange(start: 4421.44, end: 4421.98)]
+        let edl = try EDLBuilder.build(segments: segs, silences: silences, sourceRange: TimeRange(start: 4380, end: 4500),
+                                       media: media30, settings: ExportSettings())
+        XCTAssertEqual(FrameSnapper(media: media30).seconds(edl.clips[0].sourceStartFrame), 4418.87, accuracy: 0.034)   // 39.37 − 0.5
+    }
+
+    func testInDoesNotLeaveSilenceIntoPreviousSpeech() throws {
+        // 무음이 디졸브 절반보다 짧으면 무음 시작에서 멈춘다 (잘라낸 말이 들어오지 않게)
+        let segs = [seg("T1", 100, 104.9, removed: true), seg("T2", 105, 110)]
+        let edl = try EDLBuilder.build(segments: segs, silences: [TimeRange(start: 104.9, end: 105.2)], sourceRange: TimeRange(start: 90, end: 200),
+                                       media: media30, settings: ExportSettings())
+        XCTAssertEqual(FrameSnapper(media: media30).seconds(edl.clips[0].sourceStartFrame), 104.9, accuracy: 0.034)
+    }
+
+    func testShortPauseRightAfterStartIsNotSkipped() throws {
+        // 시작 0.3초 뒤의 짧은 무음(숨 고르기)은 건너뛰지 않는다 → 패딩
+        let segs = [seg("T1", 100, 104, removed: true), seg("T2", 105, 110)]
+        let edl = try EDLBuilder.build(segments: segs, silences: [TimeRange(start: 105.3, end: 105.6)], sourceRange: TimeRange(start: 90, end: 200),
+                                       media: media30, settings: ExportSettings())
+        XCTAssertEqual(FrameSnapper(media: media30).seconds(edl.clips[0].sourceStartFrame), 104.75, accuracy: 0.034)
+    }
+
+    func testLeadingAmenBelongsToPrayer() throws {
+        // 10/11 43:37 "아멘 계속해서 …": 아멘 뒤 무음(38.49~38.95)까지 건너뛴다. 사용자 In 38.70
+        var t = TranscriptSegment(id: "T68", start: 2617.0, end: 2625.19, text: "아멘 계속해서 예수도서를 묵상하고")
+        t.isRemoved = false
+        let segs = [seg("T67", 2613.98, 2617.0, removed: true), t]
+        let edl = try EDLBuilder.build(segments: segs, silences: [TimeRange(start: 2618.49, end: 2618.95)], sourceRange: TimeRange(start: 2600, end: 2700),
+                                       media: media30, settings: ExportSettings())
+        XCTAssertEqual(FrameSnapper(media: media30).seconds(edl.clips[0].sourceStartFrame), 2618.49, accuracy: 0.034)
+    }
+
+    func testOutStopsShortlyAfterSpeechInsideLongSilence() throws {
+        // 1:07:20.58 말 끝, 20.62~25.73 무음 → 20.62 + 0.6. 사용자 Out 21.23
+        let segs = [seg("T1", 4030, 4040.58), seg("T2", 4043.75, 4049.87, removed: true), seg("T3", 4060, 4070)]
+        let edl = try EDLBuilder.build(segments: segs, silences: [TimeRange(start: 4040.62, end: 4045.73)], sourceRange: TimeRange(start: 4000, end: 4100),
+                                       media: media30, settings: ExportSettings())
+        XCTAssertEqual(FrameSnapper(media: media30).seconds(edl.clips[0].sourceEndFrame), 4041.22, accuracy: 0.034)
+    }
+
+    func testDefaultAudioGainIs9dB() {
+        XCTAssertEqual(ExportSettings().audioGainDB, 9)
     }
 
     func testNaturalPausesAreNotCut() throws {

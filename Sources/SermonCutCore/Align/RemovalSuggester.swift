@@ -143,7 +143,8 @@ public struct RemovalSuggester: Sendable {
 
     /// 구간 마지막 30초 안에서 봉헌·찬송 안내가 시작되는 세그먼트부터 끝까지
     static func closingAnnouncement(_ segs: [TranscriptSegment], sourceRange: TimeRange) -> ClosedRange<Int>? {
-        let pattern = #"(봉헌|헌금|찬송가\s*\d+\s*장|찬송하시면서|찬송하겠습니다)"#
+        // whisper가 "찬송가"를 "찬송과"처럼 잘못 듣기도 해서 (10/11) 찬송 뒤 두 글자까지 허용
+        let pattern = #"(봉헌|헌금|찬송\S{0,2}\s*\d+\s*장|찬송하시면서|찬송하겠습니다)"#
         guard let last = segs.indices.last else { return nil }
         for j in segs.indices where segs[j].start >= sourceRange.end - 30 {
             if segs[j].text.range(of: pattern, options: .regularExpression) != nil { return j...last }

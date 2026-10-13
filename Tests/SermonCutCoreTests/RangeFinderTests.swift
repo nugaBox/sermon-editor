@@ -58,4 +58,11 @@ final class RangeFinderTests: XCTestCase {
         XCTAssertTrue(out.segments[1].isRemoved)
         XCTAssertEqual(out.segments[1].unmatchedReason, .greeting)
     }
+
+    func testClosingAnnouncementToleratesMisheardHymn() {
+        // 10/11: whisper가 "찬송가 210장"을 "찬송과 210장"으로 들음
+        let segs = [TranscriptSegment(id: "T1", start: 100, end: 110, text: "예수님 이름으로 기도하옵나이다. 아멘."),
+                    TranscriptSegment(id: "T2", start: 110, end: 112, text: "찬송과 210장을 찬송.")]
+        XCTAssertEqual(RemovalSuggester.closingAnnouncement(segs, sourceRange: TimeRange(start: 100, end: 112)), 1...1)
+    }
 }

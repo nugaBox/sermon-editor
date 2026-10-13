@@ -7,7 +7,7 @@ let usage = """
 사용법:
   sermoncut analyze  --video 영상 --in 시작 --out 끝 [--manuscript 원고] [--work 작업폴더] [--project 저장경로]
   sermoncut export   --project 프로젝트.sermoncut --fcpxml 출력.fcpxml [--no-transitions] [--gain dB] [--with-template [--thumbnail 썸네일.jpg]]
-  sermoncut evaluate --project 프로젝트.sermoncut --reference 기준.fcpxml [--gap 초]
+  sermoncut evaluate --project 프로젝트.sermoncut --reference 기준.fcpxml [--gap 초] [--boundaries]
   sermoncut realign  --project 프로젝트.sermoncut [--run 초] [--threshold 0.3]
   sermoncut transcript --project 프로젝트.sermoncut [--all]
   sermoncut manuscript 원고파일
@@ -240,6 +240,48 @@ func evaluate(_ args: Args) throws {
     if let tol = args.options["gap"].flatMap(Double.init) {
         let small = preGaps.filter { $0.duration < tol }
         print("\n\(tol)초 미만 짧은 컷: \(small.count)곳")
+    }
+    if args.flags.contains("boundaries") {
+        try printBoundaryComparison(project: project, reference: reference)
+    }
+}
+
+/// 삭제 판단은 기준 편집과 같게 맞춘 뒤(세그먼트가 기준 유지 구간과 1초 이상 또는 절반 이상 겹치면 유지)
+/// 편집점 위치만 비교한다 — 앞뒤를 얼마나 더/덜 잘랐는지 (docs/phase7-report.md)
+func printBoundaryComparison(project: SermonProject, reference raw: [TimeRange]) throws {
+    // FCP에서 블레이드로 나눈 이어진 조각은 한 구간으로
+    var reference: [TimeRange] = []
+    for r in raw {
+        if let last = reference.last, abs(r.start - last.end) < 0.05 { reference[reference.count - 1].end = r.end } else { reference.append(r) }
+    }
+    var segments = project.segments
+    for i in segments.indices {
+        let s = segments[i]
+        let overlap = reference.reduce(0.0) { $0 + max(0, min($1.end, s.end) - max($1.start, s.start)) }
+        segments[i].isRemoved = !(overlap >= 1.0 || overlap / max(s.end - s.start, 0.001) >= 0.5)
+    }
+    let edl = try EDLBuilder.build(segments: segments, silences: project.silences, sourceRange: project.sourceRange,
+                                   media: project.media, settings: project.settings)
+    let snap = FrameSnapper(media: project.media)
+    let predicted = edl.clips.map { TimeRange(start: snap.seconds($0.sourceStartFrame), end: snap.seconds($0.sourceEndFrame)) }
+    print("\n편집점 위치 (삭제 판단은 기준과 같게 맞춤, +는 기준보다 늦게):")
+    var errors: [Double] = []
+    for (i, r) in reference.enumerated() {
+        let best = predicted.max { a, b in
+            max(0, min(a.end, r.end) - max(a.start, r.start)) < max(0, min(b.end, r.end) - max(b.start, r.start))
+        }
+        guard let p = best, min(p.end, r.end) > max(p.start, r.start) else {
+            print(String(format: "  %2d  기준 %@ ~ %@ → 대응 구간 없음", i + 1, Timecode.format(r.start), Timecode.format(r.end)))
+            continue
+        }
+        let dIn = p.start - r.start, dOut = p.end - r.end
+        errors += [abs(dIn), abs(dOut)]
+        print(String(format: "  %2d  기준 %@ ~ %@ / 제안 %@ ~ %@  (시작 %+.2f초, 끝 %+.2f초)", i + 1,
+                     Timecode.format(r.start), Timecode.format(r.end), Timecode.format(p.start), Timecode.format(p.end), dIn, dOut))
+    }
+    if let worst = errors.max() {
+        let mean = errors.reduce(0, +) / Double(errors.count)
+        print(String(format: "편집점 %d곳: 평균 %.2f초, 최대 %.2f초, 0.5초 이내 %d곳", errors.count, mean, worst, errors.filter { $0 <= 0.5 }.count))
     }
 }
 

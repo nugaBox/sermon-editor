@@ -129,7 +129,7 @@ public struct ExportSettings: Codable, Equatable, Sendable {
     public var silenceThresholdDB: Double = -35
     public var minSilenceDuration: Double = 0.3
     public var fallbackToHardCut: Bool = true
-    public var audioGainDB: Double = 12
+    public var audioGainDB: Double = 9
     /// 이 간격보다 가까운 유지 구간은 하나로 합친다 (SPEC §6.1-2)
     public var mergeGap: Double = 0.5
     /// 무음 스냅 탐색 범위 (SPEC §6.1-4)
