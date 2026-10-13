@@ -16,15 +16,17 @@ struct WelcomeView: View {
                 .frame(width: 160, height: 160)
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                 .accessibilityHidden(true)
-            Text("SermonCut").font(.largeTitle.bold())
+            Text("SermonCut").font(.system(size: 44, weight: .bold))
             Text("예배 영상에서 설교만 잘라 원고와 대조하고, Final Cut Pro용 편집본을 만듭니다.")
+                .font(.title2)
                 .foregroundStyle(.secondary)
             HStack(spacing: 12) {
                 Button {
                     FilePanels.openVideo(state)
                 } label: {
                     Label("영상 열기…", systemImage: "play.rectangle")
-                        .frame(minWidth: 140)
+                        .font(.title3)
+                        .frame(minWidth: 180)
                 }
                 .keyboardShortcut(.defaultAction)
                 .controlSize(.large)
@@ -32,15 +34,22 @@ struct WelcomeView: View {
                     FilePanels.openProject(state)
                 } label: {
                     Label("프로젝트 열기…", systemImage: "folder")
-                        .frame(minWidth: 140)
+                        .font(.title3)
+                        .frame(minWidth: 180)
                 }
                 .controlSize(.large)
             }
             Text("영상 파일(.mp4 / .mov)이나 프로젝트(.sermoncut)를 여기에 끌어다 놓아도 됩니다.")
-                .font(.callout)
+                .font(.body)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
+            Text("© 2026 NUGABOX. All rights reserved.")
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 16)
+        }
         .background(isTargeted ? Color.accentColor.opacity(0.08) : Color.clear)
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
