@@ -1,9 +1,18 @@
 #!/bin/zsh
 # SwiftPM 실행 파일 → SermonCut.app 번들 (Xcode 프로젝트 없이)
-# 사용: scripts/build-app.sh [debug|release]   결과: build/SermonCut.app
+# 사용: scripts/build-app.sh [debug|release] [--install]   결과: build/SermonCut.app
+#   --install: /Applications/SermonCut.app으로 옮겨 설치 (앱 목록에 SermonCut이 하나만 보이도록 build/ 사본은 남기지 않음)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-CONFIG="${1:-release}"
+CONFIG="release"
+INSTALL=0
+for arg in "$@"; do
+  case "$arg" in
+    debug|release) CONFIG="$arg" ;;
+    --install) INSTALL=1 ;;
+  esac
+done
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 swift build -c "$CONFIG" --product SermonCutApp
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/SermonCutApp"
 APP="build/SermonCut.app"
@@ -21,4 +30,15 @@ if [[ -n "$IDENTITY" && "$IDENTITY" != "-" ]]; then
 else
   codesign --force --sign - --options runtime "$APP" >/dev/null
 fi
-echo "$APP"
+if (( INSTALL )); then
+  DEST="/Applications/SermonCut.app"
+  rm -rf "$DEST"
+  ditto "$APP" "$DEST"
+  "$LSREGISTER" -u "$PWD/$APP" 2>/dev/null || true
+  rm -rf "$APP"
+  touch "$DEST"
+  "$LSREGISTER" -f "$DEST"
+  echo "$DEST"
+else
+  echo "$APP"
+fi
