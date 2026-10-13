@@ -1,3 +1,4 @@
+import AppKit
 import SermonCutCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -8,9 +9,13 @@ struct WelcomeView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "film.stack")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
+            // 번들 아이콘(App/AppIcon.icns) — 아이콘 모양 둘레의 투명 여백까지 포함한 크기
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 160, height: 160)
+                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                .accessibilityHidden(true)
             Text("SermonCut").font(.largeTitle.bold())
             Text("예배 영상에서 설교만 잘라 원고와 대조하고, Final Cut Pro용 편집본을 만듭니다.")
                 .foregroundStyle(.secondary)
