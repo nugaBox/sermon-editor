@@ -311,7 +311,10 @@ struct TimelineControls: View {
                 .buttonStyle(.borderless)
                 .help("전체 보기 (⇧Z)")
         }
+        .labelStyle(.titleAndIcon)
+        .lineLimit(1)
         .controlSize(.small)
+        .fixedSize()
     }
 }
 
