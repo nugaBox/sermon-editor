@@ -30,7 +30,7 @@ xcuserdata/
 
 # whisper 모델
 *.bin
-models/
+/models/
 
 # 번들 바이너리 (로컬 배치용, 저장소에 넣지 않음)
 SermonCut/Resources/bin/
