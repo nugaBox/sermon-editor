@@ -3,7 +3,7 @@ import SermonCutCore
 import SwiftUI
 
 /// 앱 자체 점검 모드 — 외부 UI 조작 없이 실제 화면 흐름을 끝까지 돌리고 각 화면을 PNG로 남긴다.
-/// 사용: SermonCut.app/Contents/MacOS/SermonCut --selftest 출력폴더 --video 영상 --manuscript 원고 [--seed 작업캐시폴더]
+/// 사용: "누가의 Sermon Editor.app"/Contents/MacOS/SermonCut --selftest 출력폴더 --video 영상 --manuscript 원고 [--seed 작업캐시폴더]
 /// 키 입력은 실제 NSEvent를 창에 보내 onKeyPress 처리까지 검증한다.
 @MainActor
 enum SelfTest {

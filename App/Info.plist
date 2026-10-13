@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key><string>SermonCut</string>
-	<key>CFBundleDisplayName</key><string>SermonCut</string>
+	<key>CFBundleName</key><string>누가의 Sermon Editor</string>
+	<key>CFBundleDisplayName</key><string>누가의 Sermon Editor</string>
 	<key>CFBundleIdentifier</key><string>com.nugabox.sermoncut</string>
 	<key>CFBundleExecutable</key><string>SermonCut</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>

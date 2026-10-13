@@ -1,7 +1,7 @@
 #!/bin/zsh
-# SwiftPM 실행 파일 → SermonCut.app 번들 (Xcode 프로젝트 없이)
-# 사용: scripts/build-app.sh [debug|release] [--install]   결과: build/SermonCut.app
-#   --install: /Applications/SermonCut.app으로 옮겨 설치 (앱 목록에 SermonCut이 하나만 보이도록 build/ 사본은 남기지 않음)
+# SwiftPM 실행 파일 → "누가의 Sermon Editor.app" 번들 (Xcode 프로젝트 없이)
+# 사용: scripts/build-app.sh [debug|release] [--install]   결과: build/누가의 Sermon Editor.app
+#   --install: /Applications로 옮겨 설치 (앱 목록에 하나만 보이도록 build/ 사본과 예전 이름 SermonCut.app은 남기지 않음)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG="release"
@@ -15,7 +15,8 @@ done
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 swift build -c "$CONFIG" --product SermonCutApp
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/SermonCutApp"
-APP="build/SermonCut.app"
+APP_NAME="누가의 Sermon Editor"
+APP="build/$APP_NAME.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin"
 cp "$BIN" "$APP/Contents/MacOS/SermonCut"
@@ -31,8 +32,13 @@ else
   codesign --force --sign - --options runtime "$APP" >/dev/null
 fi
 if (( INSTALL )); then
-  DEST="/Applications/SermonCut.app"
+  DEST="/Applications/$APP_NAME.app"
   rm -rf "$DEST"
+  # 예전 이름으로 설치된 번들 정리
+  if [[ -d /Applications/SermonCut.app ]]; then
+    "$LSREGISTER" -u /Applications/SermonCut.app 2>/dev/null || true
+    rm -rf /Applications/SermonCut.app
+  fi
   ditto "$APP" "$DEST"
   "$LSREGISTER" -u "$PWD/$APP" 2>/dev/null || true
   rm -rf "$APP"

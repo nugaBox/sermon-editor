@@ -16,7 +16,7 @@ struct WelcomeView: View {
                 .frame(width: 160, height: 160)
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                 .accessibilityHidden(true)
-            Text("SermonCut").font(.system(size: 44, weight: .bold))
+            Text("누가의 Sermon Editor").font(.system(size: 44, weight: .bold))
             Text("예배 영상에서 설교만 잘라 원고와 대조하고, Final Cut Pro용 편집본을 만듭니다.")
                 .font(.title2)
                 .foregroundStyle(.secondary)

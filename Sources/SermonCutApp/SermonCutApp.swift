@@ -9,7 +9,7 @@ struct SermonCutApp: App {
     @State private var state = AppState()
 
     var body: some Scene {
-        Window("SermonCut", id: "main") {
+        Window("누가의 Sermon Editor", id: "main") {
             ContentView()
                 .environment(state)
                 .frame(minWidth: 1100, minHeight: 720)
