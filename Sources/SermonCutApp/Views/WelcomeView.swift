@@ -25,19 +25,19 @@ struct WelcomeView: View {
                     FilePanels.openVideo(state)
                 } label: {
                     Label("영상 열기…", systemImage: "play.rectangle")
-                        .font(.title2)
-                        .frame(minWidth: 200, minHeight: 44)
+                        .font(.title3)
+                        .frame(minWidth: 180)
                 }
                 .keyboardShortcut(.defaultAction)
-                .controlSize(.extraLarge)
+                .controlSize(.large)
                 Button {
                     FilePanels.openProject(state)
                 } label: {
                     Label("프로젝트 열기…", systemImage: "folder")
-                        .font(.title2)
-                        .frame(minWidth: 200, minHeight: 44)
+                        .font(.title3)
+                        .frame(minWidth: 180)
                 }
-                .controlSize(.extraLarge)
+                .controlSize(.large)
             }
             Text("영상 파일(.mp4 / .mov)이나 프로젝트(.sermoncut)를 여기에 끌어다 놓아도 됩니다.")
                 .font(.title3)
@@ -46,7 +46,7 @@ struct WelcomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) {
             Text("© 2026 NUGABOX. All rights reserved.")
-                .font(.footnote)
+                .font(.title2)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 16)
         }
