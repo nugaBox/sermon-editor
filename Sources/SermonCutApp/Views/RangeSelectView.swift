@@ -12,12 +12,12 @@ struct RangeSelectView: View {
         VStack(spacing: 0) {
             MediaHeader()
             Divider()
-            PlayerView(player: state.player)
+            ViewerView()
                 .frame(minHeight: 300)
                 .background(Color.black)
             Divider()
             WaveformView(mode: .rangeSelect)
-                .frame(height: 120)
+                .frame(height: 128)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             Divider()
@@ -32,6 +32,8 @@ struct RangeSelectView: View {
                     }
                 }
                 Spacer()
+                TimelineControls()
+                Divider().frame(height: 20)
                 HStack(spacing: 6) {
                     Text("여유 앞")
                     TextField("", value: $state.marginHead, format: .number.precision(.fractionLength(1)))
@@ -48,7 +50,7 @@ struct RangeSelectView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
             HStack {
-                Text("I / O: 구간 지정 · ←/→ 1초 · ⇧ 10초 · ⌥ 1프레임 · J/K/L 역재생/정지/재생 · Space 재생")
+                Text("I / O: 구간 지정 · ←/→ 1초 · ⇧ 10초 · ⌥ 1프레임 · J/K/L 역재생/정지/재생 · Space 재생 · ⌘+/⌘- 확대 · ⇧Z 전체 · S 스키밍 · ⇧S 오디오")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if state.waveform == nil {
@@ -116,6 +118,7 @@ struct RangeSelectView: View {
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        if state.handleTimelineKey(press) { return .handled }
         let shift = press.modifiers.contains(.shift)
         let option = press.modifiers.contains(.option)
         switch press.key {

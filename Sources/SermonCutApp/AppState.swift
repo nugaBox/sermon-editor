@@ -32,6 +32,32 @@ final class AppState {
     @ObservationIgnored private var stopAt: Double?
     @ObservationIgnored private var waveformTask: Task<Void, Never>?
 
+    // MARK: 타임라인 확대·스키밍 (Timeline.swift)
+    var rangeViewport = TimelineViewport()
+    var editorViewport = TimelineViewport()
+    /// 스키밍 중인 원본 시간 (마우스가 타임라인 위에 있을 때)
+    var skimTime: Double?
+    var skimmingEnabled: Bool = UserDefaults.standard.bool(forKey: "skimmingEnabled") {
+        didSet {
+            UserDefaults.standard.set(skimmingEnabled, forKey: "skimmingEnabled")
+            if !skimmingEnabled { endSkim() }
+        }
+    }
+    var audioSkimmingEnabled: Bool = UserDefaults.standard.bool(forKey: "audioSkimmingEnabled") {
+        didSet {
+            UserDefaults.standard.set(audioSkimmingEnabled, forKey: "audioSkimmingEnabled")
+            skimPlayer.isMuted = !audioSkimmingEnabled
+            if !audioSkimmingEnabled { skimPlayer.pause() }
+        }
+    }
+    /// 재생 위치와 따로 움직이는 스키밍 전용 플레이어
+    let skimPlayer = AVPlayer()
+    @ObservationIgnored var skimPending: Double?
+    @ObservationIgnored var skimPlayAfterSeek = false
+    @ObservationIgnored var skimPlayUntil = Date.distantPast
+    @ObservationIgnored var skimTask: Task<Void, Never>?
+    @ObservationIgnored var skimStopTask: Task<Void, Never>?
+
     // MARK: 설교 구간 (원본 0초 기준)
     var inPoint: Double?
     var outPoint: Double?
@@ -115,6 +141,7 @@ final class AppState {
     @ObservationIgnored private var aiTask: Task<Void, Never>?
 
     init() {
+        skimPlayer.isMuted = !audioSkimmingEnabled
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 20), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.tick(time.seconds) }
         }
@@ -130,6 +157,7 @@ final class AppState {
                 videoURL = url
                 self.media = media
                 player.replaceCurrentItem(with: AVPlayerItem(url: url))
+                skimPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
                 screen = .rangeSelect
                 loadWaveform(url)
             } catch {
@@ -156,8 +184,9 @@ final class AppState {
             manuscript = p.manuscript
             manuscriptURL = p.manuscriptPath.map { URL(fileURLWithPath: $0) }
             player.replaceCurrentItem(with: AVPlayerItem(url: video))
-            seek(p.sourceRange.start)
+            skimPlayer.replaceCurrentItem(with: AVPlayerItem(url: video))
             screen = .editor
+            seek(p.sourceRange.start)
             loadWaveform(video)
         } catch {
             errorMessage = "프로젝트 파일을 열지 못했습니다: \(error.localizedDescription)"
@@ -168,6 +197,9 @@ final class AppState {
         analysisTask?.cancel()
         waveformTask?.cancel()
         player.pause()
+        endSkim()
+        rangeViewport = TimelineViewport()
+        editorViewport = TimelineViewport()
         waveform = nil
         waveformProgress = 0
         inPoint = nil; outPoint = nil
@@ -207,6 +239,10 @@ final class AppState {
         guard t.isFinite else { return }
         currentTime = t
         playbackRate = player.rate
+        if playbackRate != 0 {
+            endSkim()
+            revealPlayhead()
+        }
         if let stop = stopAt, t >= stop {
             player.pause()
             stopAt = nil
@@ -218,6 +254,7 @@ final class AppState {
         let clamped = min(max(0, t), duration)
         currentTime = clamped
         player.seek(to: CMTime(seconds: clamped, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        revealPlayhead()
     }
 
     func nudge(_ delta: Double) { seek(currentTime + delta) }
@@ -230,6 +267,7 @@ final class AppState {
     /// J/K/L: 누를 때마다 배속 증가
     func shuttle(_ key: Character) {
         stopAt = nil
+        endSkim()
         switch key {
         case "k":
             player.pause()
@@ -252,11 +290,13 @@ final class AppState {
 
     func togglePlay() {
         stopAt = nil
+        endSkim()
         if player.rate != 0 { player.pause() } else { player.play() }
         playbackRate = player.rate
     }
 
     func play(from start: Double, until end: Double?) {
+        endSkim()
         seek(start)
         stopAt = end
         player.play()

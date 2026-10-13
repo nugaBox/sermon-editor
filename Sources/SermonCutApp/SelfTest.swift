@@ -142,6 +142,52 @@ enum SelfTest {
         await settle(1.0)
         capture("4-editor", o)
 
+        // 4a. 타임라인 확대·스키밍 (⌘= / ⌘- / ⇧Z, S / ⇧S)
+        focusList()
+        await settle()
+        let fullRange = state.visibleRange(.editor)
+        sendKey("=", modifiers: .command)
+        await settle()
+        sendKey("=", modifiers: .command)
+        await settle()
+        let zoomed = state.visibleRange(.editor)
+        check(state.editorViewport.zoom > 2.2 && (zoomed?.duration ?? 0) < (fullRange?.duration ?? 0) / 2,
+              "⌘= 두 번 확대 (×\(String(format: "%.2f", state.editorViewport.zoom)), 보이는 길이 \(Timecode.format(zoomed?.duration ?? 0, millis: false)))")
+        check(zoomed.map { $0.start <= state.currentTime && state.currentTime <= $0.end } ?? false, "확대해도 재생 위치가 화면 안")
+        state.panTimeline(.editor, by: 60)
+        check(abs((state.visibleRange(.editor)?.start ?? 0) - (zoomed?.start ?? 0) - 60) < 0.5, "타임라인 60초 이동")
+        sendKey("-", modifiers: .command)
+        await settle()
+        check(abs(state.editorViewport.zoom - 1.5) < 0.01, "⌘- 축소")
+        let wasSkimming = state.skimmingEnabled, wasAudio = state.audioSkimmingEnabled
+        state.skimmingEnabled = false
+        state.audioSkimmingEnabled = false
+        sendKey("s")
+        await settle()
+        check(state.skimmingEnabled && !state.audioSkimmingEnabled, "S 키로 스키밍 켬")
+        let playhead = state.currentTime
+        let skimTarget = (state.visibleRange(.editor)?.start ?? playhead) + 20
+        state.skim(to: skimTarget)
+        let skimmed = await wait("스키밍 프레임", timeout: 5) { abs(state.skimPlayer.currentTime().seconds - skimTarget) < 0.1 }
+        check(skimmed && abs(state.currentTime - playhead) < 0.01,
+              "스키밍: 뷰어는 \(Timecode.format(skimTarget)) 프레임, 재생 위치는 그대로 (\(Timecode.format(state.currentTime)))")
+        await settle(0.8)
+        capture("4a-skimming", o)
+        sendKey("s", modifiers: .shift)
+        await settle()
+        check(state.audioSkimmingEnabled && !state.skimPlayer.isMuted, "⇧S 키로 오디오 스키밍 켬")
+        state.skim(to: skimTarget + 5)
+        let audible = await wait("오디오 스키밍 재생", timeout: 5) { state.skimPlayer.rate > 0 }
+        let stopped = await wait("오디오 스키밍 정지", timeout: 3) { state.skimPlayer.rate == 0 }
+        check(audible && stopped, "오디오 스키밍: 움직이면 소리 재생, 멈추면 정지")
+        state.skim(to: nil)
+        check(state.skimTime == nil, "마우스가 나가면 스키밍 끝 (뷰어는 재생 위치로)")
+        sendKey("z", modifiers: .shift)
+        await settle()
+        check(state.editorViewport.zoom == 1, "⇧Z 전체 보기")
+        state.skimmingEnabled = wasSkimming
+        state.audioSkimmingEnabled = wasAudio
+
         // 4b. 목차 — 분석 직후 화면 목차 스캔이 자동으로 돈다
         check(await wait("화면 목차", timeout: 600) { !state.overlayScanRunning && state.project?.overlayChanges != nil },
               "화면 목차 자동 스캔 (전환 \(state.project?.overlayChanges?.count ?? 0)곳)")
@@ -283,7 +329,7 @@ enum SelfTest {
         guard let window else { return }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        let codes: [String: UInt16] = ["i": 34, "o": 31, "d": 2, "z": 6, "j": 38, "k": 40, "l": 37]
+        let codes: [String: UInt16] = ["i": 34, "o": 31, "d": 2, "z": 6, "j": 38, "k": 40, "l": 37, "s": 1, "=": 24, "-": 27]
         let code = chars.flatMap { codes[$0] } ?? keyCode
         // 실제 키보드처럼 Shift가 눌리면 글자는 대문자로 온다
         var text = modifiers.contains(.shift) ? (chars ?? "").uppercased() : (chars ?? "")

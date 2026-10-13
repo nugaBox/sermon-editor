@@ -14,20 +14,21 @@ struct EditorView: View {
             Divider()
             HSplitView {
                 VStack(spacing: 0) {
-                    PlayerView(player: state.player)
+                    ViewerView()
                         .background(Color.black)
                         .frame(minWidth: 420, minHeight: 240)
                     TimelineStripView()
-                        .frame(height: 28)
+                        .frame(height: 84)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                     HStack {
                         Text(timecodeWithFrames(state.currentTime, fps: state.media?.fps ?? 30)).monospacedDigit()
-                        Spacer()
                         Button { state.togglePlay() } label: {
                             Image(systemName: state.playbackRate == 0 ? "play.fill" : "pause.fill")
                         }
                         .buttonStyle(.borderless)
+                        Spacer()
+                        TimelineControls()
                     }
                     .padding(.horizontal, 10)
                     .padding(.bottom, 6)
@@ -109,7 +110,8 @@ struct EditorView: View {
                     if state.playbackRate != 0, let id { proxy.scrollTo(id, anchor: .center) }
                 }
             }
-            Text("↑↓ 이동 · D/Delete 삭제·복원 · Space 현재 세그먼트 재생 · ⇧/⌘ 클릭 다중 선택 · ⌘⌫ 선택 삭제 · ⌘Z 실행 취소 · ⌘S 저장")
+            Text("↑↓ 이동 · D/Delete 삭제·복원 · Space 현재 세그먼트 재생 · ⇧/⌘ 클릭 다중 선택 · ⌘⌫ 선택 삭제 · ⌘Z 실행 취소 · ⌘S 저장\n⌘+/⌘- 확대·축소 · ⇧Z 전체 보기 · 핀치 확대 · 두 손가락 좌우 이동 · S 스키밍 · ⇧S 오디오 스키밍")
+                .multilineTextAlignment(.center)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 6)
@@ -122,6 +124,7 @@ struct EditorView: View {
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        if state.handleTimelineKey(press) { return .handled }
         if press.key == .delete || press.key == .deleteForward {
             if press.modifiers.contains(.command) { state.remove(state.selection) } else { state.toggleRemoved(state.selection) }
             return .handled

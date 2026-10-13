@@ -51,6 +51,20 @@ struct SermonCutApp: App {
                 Button("실행 복귀") { state.redo() }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
             }
+            CommandMenu("타임라인") {
+                Button("확대") { state.zoomTimeline(by: 1.5) }
+                    .keyboardShortcut("=")
+                Button("축소") { state.zoomTimeline(by: 1 / 1.5) }
+                    .keyboardShortcut("-")
+                // 한 글자 단축키는 검색창 입력을 가로채지 않도록 메뉴가 아니라 화면 키 처리로 받는다
+                Button("전체 보기 (⇧Z)") { state.fitTimeline() }
+                Divider()
+                Toggle("스키밍 (S)", isOn: Binding(get: { state.skimmingEnabled }, set: { state.skimmingEnabled = $0 }))
+                Toggle("오디오 스키밍 (⇧S)", isOn: Binding(get: { state.audioSkimmingEnabled }, set: { v in
+                    state.audioSkimmingEnabled = v
+                    if v { state.skimmingEnabled = true }
+                }))
+            }
             CommandMenu("편집점") {
                 Button("선택 항목 삭제") { if state.screen == .editor { state.remove(state.selection) } }
                     .keyboardShortcut(.delete, modifiers: .command)
