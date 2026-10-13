@@ -2,42 +2,77 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key><string>누가의 Sermon Editor</string>
-	<key>CFBundleDisplayName</key><string>누가의 Sermon Editor</string>
-	<key>CFBundleIdentifier</key><string>com.nugabox.sermoncut</string>
-	<key>CFBundleExecutable</key><string>SermonCut</string>
-	<key>CFBundleIconFile</key><string>AppIcon</string>
-	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>0.2.0</string>
-	<key>CFBundleVersion</key><string>2</string>
-	<key>CFBundleDevelopmentRegion</key><string>ko</string>
-	<key>LSMinimumSystemVersion</key><string>14.0</string>
-	<key>LSApplicationCategoryType</key><string>public.app-category.video</string>
-	<key>NSHighResolutionCapable</key><true/>
-	<key>NSPrincipalClass</key><string>NSApplication</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ko</string>
+	<key>CFBundleDisplayName</key>
+	<string>누가의 Sermon Editor</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeName</key><string>SermonCut 프로젝트</string>
-			<key>CFBundleTypeRole</key><string>Editor</string>
-			<key>LSHandlerRank</key><string>Owner</string>
-			<key>LSItemContentTypes</key><array><string>com.nugabox.sermoncut.project</string></array>
+			<key>CFBundleTypeName</key>
+			<string>SermonCut 프로젝트</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.nugabox.sermoncut.project</string>
+			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeName</key><string>동영상</string>
-			<key>CFBundleTypeRole</key><string>Viewer</string>
-			<key>LSHandlerRank</key><string>Alternate</string>
-			<key>LSItemContentTypes</key><array><string>public.movie</string></array>
+			<key>CFBundleTypeName</key>
+			<string>동영상</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.movie</string>
+			</array>
 		</dict>
 	</array>
+	<key>CFBundleExecutable</key>
+	<string>SermonCut</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.nugabox.sermoncut</string>
+	<key>CFBundleName</key>
+	<string>누가의 Sermon Editor</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.7.0</string>
+	<key>CFBundleVersion</key>
+	<string>7</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key><string>com.nugabox.sermoncut.project</string>
-			<key>UTTypeDescription</key><string>SermonCut 프로젝트</string>
-			<key>UTTypeConformsTo</key><array><string>public.json</string></array>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>SermonCut 프로젝트</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.nugabox.sermoncut.project</string>
 			<key>UTTypeTagSpecification</key>
-			<dict><key>public.filename-extension</key><array><string>sermoncut</string></array></dict>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sermoncut</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

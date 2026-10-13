@@ -38,6 +38,9 @@ SermonCut/Resources/bin/
 # 샘플 원고 (개인 문서 — 필요 시 명시적으로 추가)
 samples/
 
+# 개발 보고서·분석 노트 (실제 설교 전사문·실명 인용 포함 — 공개 저장소에 올리지 않음)
+docs/
+
 # Final Cut Pro 보관함
 *.fcpbundle/
 *.fcpxmld/
