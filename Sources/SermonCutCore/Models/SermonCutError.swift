@@ -11,7 +11,7 @@ public enum SermonCutError: LocalizedError, Equatable {
     case transcriptParseFailed(reason: String)
     case manuscriptUnreadable(fileName: String, reason: String)
     case unsupportedManuscript(fileExtension: String)
-    case hwpBinaryNotSupported
+    case hwpProtected
     case emptyEditDecisionList
     case fileWriteFailed(path: String, reason: String)
     case invalidArgument(String)
@@ -35,9 +35,9 @@ public enum SermonCutError: LocalizedError, Equatable {
         case .manuscriptUnreadable(let name, let reason):
             return "\(name) 파일을 읽지 못했습니다(\(reason)). 한글에서 '다른 이름으로 저장 → 서식 없는 텍스트(.txt)'로 저장한 뒤 다시 시도하거나, 원고 없이 진행할 수 있습니다."
         case .unsupportedManuscript(let ext):
-            return ".\(ext) 형식의 원고는 지원하지 않습니다. hwpx, docx, txt, md 파일을 선택해 주세요."
-        case .hwpBinaryNotSupported:
-            return ".hwp 파일은 읽을 수 없습니다. 한글에서 '다른 이름으로 저장 → HWPX'로 저장한 뒤 다시 선택해 주세요."
+            return ".\(ext) 형식의 원고는 지원하지 않습니다. hwp, hwpx, docx, txt, md 파일을 선택해 주세요."
+        case .hwpProtected:
+            return "암호가 걸려 있거나 배포용으로 저장된 .hwp 파일은 읽을 수 없습니다. 한글에서 '다른 이름으로 저장 → HWPX'로 저장한 뒤 다시 선택해 주세요."
         case .emptyEditDecisionList:
             return "남길 구간이 하나도 없습니다. 삭제 표시를 확인해 주세요."
         case .fileWriteFailed(let path, let reason):

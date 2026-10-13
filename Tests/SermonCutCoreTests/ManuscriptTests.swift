@@ -42,15 +42,51 @@ final class ManuscriptTests: XCTestCase {
         XCTAssertEqual(m.sentences.map(\.text), ["본문 문장 하나입니다.", "줄 바꿈 문장입니다."])
     }
 
-    func testHwpIsRejectedWithGuidance() async {
-        do {
-            _ = try await ManuscriptLoader().load(URL(fileURLWithPath: "/tmp/없음.hwp"))
-            XCTFail("hwp는 거부해야 함")
-        } catch let e as SermonCutError {
-            XCTAssertEqual(e, .hwpBinaryNotSupported)
-            XCTAssertTrue(e.localizedDescription.contains("HWPX"))
-        } catch {
-            XCTFail("\(error)")
+    func testHwpParagraphsFromCompressedBody() throws {
+        let data = try HwpFixture.make(paragraphs: [
+            "제  목 : 시험 설교 제목 (3)",
+            "본  문 : 요한복음 3장 1~16절",
+            "  ** 첫째 대지 제목",
+            "  첫 문장입니다.\t둘째 문장입니다.(3:16)",
+            "",
+            "  ** 둘째 대지 제목",
+            "  줄이\n바뀝니다.",
+        ], controlInFirstParagraph: true)
+        let paragraphs = try HwpParser().paragraphs(data)
+        // 표·필드 같은 8글자 제어는 건너뛰고, 탭은 공백, 강제 줄바꿈은 \n (HwpxParser와 같게)
+        XCTAssertEqual(paragraphs, [
+            "제  목 : 시험 설교 제목 (3)",
+            "본  문 : 요한복음 3장 1~16절",
+            "  ** 첫째 대지 제목",
+            "  첫 문장입니다. 둘째 문장입니다.(3:16)",
+            "",
+            "  ** 둘째 대지 제목",
+            "  줄이\n바뀝니다.",
+        ])
+    }
+
+    func testHwpManuscriptThroughLoader() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sermoncut-test-\(UUID().uuidString).hwp")
+        try HwpFixture.make(paragraphs: ["제  목 : 한글 원고 (2)", "본  문 : 에스더 7장 1~6절", "  ** 반전은 하나님이 준비하신다", "  첫 문장입니다."]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let m = try await ManuscriptLoader().load(url)
+        XCTAssertEqual(m.title, "한글 원고")
+        XCTAssertEqual(m.passage, "에스더 7장 1~6절")
+        XCTAssertEqual(m.headings.map(\.title), ["반전은 하나님이 준비하신다"])
+        XCTAssertEqual(m.sentences.map(\.text), ["첫 문장입니다."])
+    }
+
+    func testProtectedHwpIsRejectedWithGuidance() throws {
+        let data = try HwpFixture.make(paragraphs: ["본문"], flags: 0b11)   // 압축 + 암호
+        XCTAssertThrowsError(try HwpParser().paragraphs(data)) { error in
+            XCTAssertEqual(error as? SermonCutError, .hwpProtected)
+            XCTAssertTrue(error.localizedDescription.contains("HWPX"))
+        }
+    }
+
+    func testNonHwpFileIsUnreadable() {
+        XCTAssertThrowsError(try HwpParser().paragraphs(Data("그냥 글자".utf8))) { error in
+            guard case .manuscriptUnreadable = error as? SermonCutError else { return XCTFail("\(error)") }
         }
     }
 

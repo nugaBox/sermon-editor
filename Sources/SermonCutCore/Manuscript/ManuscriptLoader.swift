@@ -18,12 +18,12 @@ public struct ManuscriptLoader: Sendable {
             case "hwpx": return try await HwpxParser(locator: locator).paragraphs(url)
             case "docx": return try await DocxParser(locator: locator).paragraphs(url)
             case "txt", "md", "text": return try Self.plainParagraphs(url)
-            case "hwp": throw SermonCutError.hwpBinaryNotSupported
+            case "hwp": return try HwpParser().paragraphs(url)
             default: throw SermonCutError.unsupportedManuscript(fileExtension: ext)
             }
         } catch let e as SermonCutError {
             switch e {
-            case .hwpBinaryNotSupported, .unsupportedManuscript, .cancelled: throw e
+            case .hwpProtected, .unsupportedManuscript, .manuscriptUnreadable, .cancelled: throw e
             default: throw SermonCutError.manuscriptUnreadable(fileName: url.lastPathComponent, reason: e.localizedDescription)
             }
         }

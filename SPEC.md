@@ -7,7 +7,7 @@
 
 ## 0. 한 줄 요약
 
-예배 전체가 담긴 라이브 영상(60~120분)에서 **설교 구간만 먼저 타임라인으로 잘라내고**, 설교 원고(hwpx/docx/txt)와 대조해 **원고에 대응되지 않는 구간을 AI가 자동으로 삭제 후보로 마킹한 전사문**을 보여준 뒤, 사용자가 최종 확인하면 **FCPXML(Final Cut Pro 임포트용)** 또는 **ffmpeg 렌더 결과물**로 내보내는 macOS 네이티브 앱.
+예배 전체가 담긴 라이브 영상(60~120분)에서 **설교 구간만 먼저 타임라인으로 잘라내고**, 설교 원고(hwp/hwpx/docx/txt)와 대조해 **원고에 대응되지 않는 구간을 AI가 자동으로 삭제 후보로 마킹한 전사문**을 보여준 뒤, 사용자가 최종 확인하면 **FCPXML(Final Cut Pro 임포트용)** 또는 **ffmpeg 렌더 결과물**로 내보내는 macOS 네이티브 앱.
 
 ---
 
@@ -27,7 +27,7 @@
       │    "대표기도"/"봉헌" 키워드 위치를 후보로 제시 (선택 기능)
       └─ 확정 → sourceRange 저장
 
-[3단계] 설교 원고 파일 선택 (.hwpx/.docx/.txt/.md) — 선택사항
+[3단계] 설교 원고 파일 선택 (.hwp/.hwpx/.docx/.txt/.md) — 선택사항
 
 [4단계] "분석 시작"
       ├─ ffmpeg: sourceRange 구간만 16kHz mono wav 추출
@@ -62,7 +62,7 @@
 | 오디오/렌더 | `ffmpeg` (번들 바이너리) | `xfade`, `acrossfade`, `silencedetect` |
 | STT | `whisper.cpp` (Metal) + `ggml-large-v3` | 별도 다운로드, 앱에서 경로 지정 |
 | AI 정렬 | Claude API / DeepSeek API / OpenAI 호환 엔드포인트 | Provider 추상화 |
-| 문서 파싱 | **hwpx / docx / txt / md** — 전부 자체 파싱 | hwpx·docx 모두 ZIP + XML 구조. 아래 6.0절 참고 |
+| 문서 파싱 | **hwp / hwpx / docx / txt / md** — 전부 자체 파싱 | hwpx·docx 모두 ZIP + XML 구조. 아래 6.0절 참고. hwp는 OLE 복합문서 직접 읽기 (docs/hwpx-structure.md §6) |
 | ZIP 해제 | `ZIPFoundation` (SPM) 또는 `libcompression` 직접 사용 | hwpx/docx 컨테이너 해제용 |
 | 파형 생성 | `AVAssetReader` 또는 ffmpeg PCM 덤프 → 피크 다운샘플 | 구간 선택 화면용 |
 | 설정 저장 | `UserDefaults` (일반) + **Keychain (API 키)** | `.env` 사용 금지 — 아래 3절 참고 |
@@ -282,6 +282,7 @@ SermonCut/
 │   ├── Manuscript/
 │   │   ├── ManuscriptLoader.swift      확장자 분기
 │   │   ├── HwpxParser.swift            ★ hwpx (OWPML) 파싱
+│   │   ├── HwpParser.swift             hwp 5.x (OLE + deflate) 파싱
 │   │   ├── DocxParser.swift
 │   │   └── SentenceSplitter.swift      한국어 문장 분할
 │   ├── Align/
@@ -720,7 +721,7 @@ PSD 분석 결과(`docs/thumbnail-template.md`): 텍스트 레이어에 **레이
 - [x] `WelcomeView` — 영상 파일 선택
 - [x] `WaveformGenerator` + `WaveformView` — 파형 렌더 및 캐시 (92분 6초)
 - [x] `RangeSelectView` — In/Out 마커, J/K/L, 프레임 단위 이동
-- [x] `ManuscriptPickerView` — hwpx/docx/txt 선택 + 파싱 결과 미리보기
+- [x] `ManuscriptPickerView` — hwp/hwpx/docx/txt 선택 + 파싱 결과 미리보기
 - [x] `AnalyzeProgressView` — 단계별 진행률, 취소
 - [x] `EditorView` — 세그먼트 리스트, 토글, 키보드 단축키, Undo
 - [x] 타임라인 스트립

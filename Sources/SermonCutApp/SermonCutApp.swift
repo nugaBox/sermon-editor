@@ -131,7 +131,7 @@ enum FilePanels {
     static func chooseManuscript(_ state: AppState) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = manuscriptTypes
-        panel.message = "설교 원고 (hwpx, docx, txt, md)"
+        panel.message = "설교 원고 (hwp, hwpx, docx, txt, md)"
         if panel.runModal() == .OK, let url = panel.url { state.loadManuscript(url) }
     }
 
