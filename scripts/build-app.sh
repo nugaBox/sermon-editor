@@ -11,6 +11,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin"
 cp "$BIN" "$APP/Contents/MacOS/SermonCut"
 cp App/Info.plist "$APP/Contents/Info.plist"
+cp App/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # 샌드박스 없음(SPEC §2). 서명:
 #  - Apple Development 인증서가 있으면 그것으로 (서명이 빌드마다 같아서 Keychain '항상 허용'이 유지됨)
 #  - 없거나 SIGN_IDENTITY=- 이면 임시(ad-hoc) 서명
